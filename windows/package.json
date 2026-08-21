@@ -1,0 +1,51 @@
+{
+  "name": "imnu-schedule-float-win",
+  "version": "1.0.1",
+  "description": "内蒙古师范大学教务课表悬浮助手 Windows 版",
+  "main": "src/main.js",
+  "author": "liuli",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build:win": "electron-builder --win nsis --x64",
+    "pack:win": "electron-builder --win dir --x64"
+  },
+  "devDependencies": {
+    "electron": "^37.2.6",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "cn.liuli.imnu-schedule-float",
+    "productName": "教务悬浮助手",
+    "artifactName": "教务悬浮助手-Windows-${version}-x64-安装包.${ext}",
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "files": [
+      "src/**/*",
+      "assets/icon.png",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "教务悬浮助手",
+      "installerLanguages": ["zh_CN"],
+      "language": "2052",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}
