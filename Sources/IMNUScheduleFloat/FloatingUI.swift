@@ -468,7 +468,15 @@ private struct CourseCard: View {
                 HStack {
                     Text(course.name).font(.subheadline.weight(.semibold)).lineLimit(1)
                     Spacer()
-                    Text(course.sectionText).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(course.sectionText)
+                        if !course.timeText.isEmpty {
+                            Text(course.timeText)
+                        }
+                    }
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 }
                 Text([course.teacher, course.location].filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.caption)

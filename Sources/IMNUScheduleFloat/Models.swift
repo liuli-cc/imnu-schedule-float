@@ -16,6 +16,33 @@ struct Course: Codable, Identifiable, Hashable {
     var sectionText: String {
         startSection == endSection ? "第\(startSection)节" : "第\(startSection)-\(endSection)节"
     }
+
+    var timeText: String {
+        SectionTime.text(startSection: startSection, endSection: endSection)
+    }
+}
+
+enum SectionTime {
+    private struct Block {
+        let sections: ClosedRange<Int>
+        let start: String
+        let end: String
+    }
+
+    // 教务系统课表页的“大节”时间：每个大节包含连续两小节。
+    private static let blocks = [
+        Block(sections: 1...2, start: "08:20", end: "10:00"),
+        Block(sections: 3...4, start: "10:20", end: "12:00"),
+        Block(sections: 5...6, start: "14:00", end: "15:40"),
+        Block(sections: 7...8, start: "16:00", end: "17:40"),
+        Block(sections: 9...10, start: "19:00", end: "20:40")
+    ]
+
+    static func text(startSection: Int, endSection: Int) -> String {
+        guard let first = blocks.first(where: { $0.sections.contains(startSection) }),
+              let last = blocks.first(where: { $0.sections.contains(endSection) }) else { return "" }
+        return "\(first.start)–\(last.end)"
+    }
 }
 
 struct StudentProfile: Codable, Equatable {

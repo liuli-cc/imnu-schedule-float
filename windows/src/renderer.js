@@ -7,6 +7,13 @@ let appState = {
 };
 let selectedView = 'today';
 let selectedWeek = 1;
+const CLASS_TIME_BLOCKS = [
+  { startSection: 1, endSection: 2, start: '08:20', end: '10:00' },
+  { startSection: 3, endSection: 4, start: '10:20', end: '12:00' },
+  { startSection: 5, endSection: 6, start: '14:00', end: '15:40' },
+  { startSection: 7, endSection: 8, start: '16:00', end: '17:40' },
+  { startSection: 9, endSection: 10, start: '19:00', end: '20:40' }
+];
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -79,6 +86,12 @@ function currentWeekday() {
   return day === 0 ? 7 : day;
 }
 
+function classTimeText(course) {
+  const first = CLASS_TIME_BLOCKS.find(block => course.startSection >= block.startSection && course.startSection <= block.endSection);
+  const last = CLASS_TIME_BLOCKS.find(block => course.endSection >= block.startSection && course.endSection <= block.endSection);
+  return first && last ? `${first.start}–${last.end}` : '';
+}
+
 function courseCard(course) {
   const card = element('article', 'course-card');
   card.append(element('span', `course-accent color-${course.colorIndex % 6}`));
@@ -86,7 +99,11 @@ function courseCard(course) {
   const heading = element('div', 'course-heading');
   heading.append(element('strong', 'course-name', course.name));
   const section = course.startSection === course.endSection ? `第${course.startSection}节` : `第${course.startSection}-${course.endSection}节`;
-  heading.append(element('span', 'course-section', section));
+  const sectionMeta = element('span', 'course-section-meta');
+  sectionMeta.append(element('span', 'course-section', section));
+  const time = classTimeText(course);
+  if (time) sectionMeta.append(element('span', 'course-time', time));
+  heading.append(sectionMeta);
   content.append(heading);
   const meta = [course.teacher, course.location].filter(Boolean).join(' · ');
   if (meta) content.append(element('div', 'course-meta', meta));
