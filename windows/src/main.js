@@ -16,6 +16,7 @@ let portalWindow;
 let tray;
 let refreshTimer;
 let syncInProgress = false;
+let networkOnline = true;
 let dragOrigin = null;
 let settings = {};
 let state = {
@@ -222,13 +223,58 @@ function isPortalHome(urlString) {
   } catch { return false; }
 }
 
+function isAuthenticationPage(urlString) {
+  try {
+    const url = new URL(urlString);
+    return url.hostname === 'auth.imnu.edu.cn' || /\/(login|caslogin)/i.test(url.pathname);
+  } catch { return false; }
+}
+
+function isNetworkError(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  return [
+    'err_internet_disconnected', 'err_network_changed', 'err_name_not_resolved',
+    'err_connection', 'err_timed_out', 'failed to fetch', 'network error',
+    'networkerror', 'offline', 'internet connection', 'could not connect'
+  ].some(fragment => message.includes(fragment));
+}
+
+function markOffline() {
+  setStatus('offline', '网络不可用，正在使用已缓存的课表');
+}
+
+function reloadPortalAfterNetworkRecovery() {
+  const window = ensurePortalWindow(false);
+  if (!window.webContents.isLoading()) {
+    window.loadURL(PORTAL_URL).catch(error => {
+      if (isNetworkError(error)) markOffline();
+      else setStatus('failed', `连接教务系统失败：${error.message}`);
+    });
+  }
+}
+
 async function syncSchedule({ showLogin = false } = {}) {
   if (syncInProgress) return;
+  if (!networkOnline) {
+    markOffline();
+    return;
+  }
   ensurePortalWindow(showLogin);
-  if (!isPortalHome(portalWindow.webContents.getURL())) {
-    setStatus('needsAuthorization', '登录已失效，请重新授权');
-    if (showLogin || state.courses.length === 0) portalWindow.show();
-    if (!portalWindow.webContents.isLoading()) portalWindow.loadURL(PORTAL_URL);
+  const currentURL = portalWindow.webContents.getURL();
+  if (!isPortalHome(currentURL)) {
+    if (isAuthenticationPage(currentURL)) {
+      setStatus('needsAuthorization', '登录已失效，请重新授权');
+      portalWindow.show();
+      portalWindow.focus();
+    } else {
+      setStatus('syncing', '正在连接教务系统');
+      if (!portalWindow.webContents.isLoading()) {
+        portalWindow.loadURL(PORTAL_URL).catch(error => {
+          if (isNetworkError(error)) markOffline();
+          else setStatus('failed', `连接教务系统失败：${error.message}`);
+        });
+      }
+    }
     return;
   }
 
@@ -259,7 +305,10 @@ async function syncSchedule({ showLogin = false } = {}) {
   } catch (error) {
     if (String(error.message).includes('AUTH_REQUIRED')) {
       setStatus('needsAuthorization', '登录已失效，请重新授权');
-      if (showLogin || state.courses.length === 0) portalWindow.show();
+      portalWindow.show();
+    } else if (isNetworkError(error)) {
+      networkOnline = false;
+      markOffline();
     } else {
       setStatus('failed', `读取失败：${error.message}`);
     }
@@ -357,8 +406,21 @@ function ensurePortalWindow(show = false) {
   portalWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   portalWindow.webContents.on('did-finish-load', () => {
     const currentURL = portalWindow.webContents.getURL();
+    networkOnline = true;
     if (isPortalHome(currentURL)) syncSchedule();
-    else if (state.courses.length === 0) portalWindow.show();
+    else if (isAuthenticationPage(currentURL)) {
+      setStatus('needsAuthorization', '登录已失效，请重新授权');
+      portalWindow.show();
+    } else if (state.courses.length === 0) portalWindow.show();
+  });
+  portalWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, _validatedURL, isMainFrame) => {
+    if (!isMainFrame || errorCode === -3) return;
+    if (isNetworkError(errorDescription)) {
+      networkOnline = false;
+      markOffline();
+    } else {
+      setStatus('failed', `连接教务系统失败：${errorDescription}`);
+    }
   });
   portalWindow.on('close', event => {
     if (!app.isQuitting) { event.preventDefault(); portalWindow.hide(); }
@@ -466,6 +528,14 @@ function registerIPC() {
   ipcMain.on('panel:hide', () => panelWindow?.hide());
   ipcMain.on('action:authorize', () => ensurePortalWindow(true));
   ipcMain.on('action:sync', () => syncSchedule({ showLogin: true }));
+  ipcMain.on('network:changed', (_event, online) => {
+    networkOnline = Boolean(online);
+    if (!networkOnline) {
+      markOffline();
+    } else if (state.syncStatus === 'offline') {
+      reloadPortalAfterNetworkRecovery();
+    }
+  });
   ipcMain.handle('action:clear', async () => {
     try { fs.unlinkSync(dataPath('schedule-cache.json')); } catch {}
     if (portalWindow && !portalWindow.isDestroyed()) {

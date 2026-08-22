@@ -20,6 +20,9 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         webSession.attach(scheduleStore: store)
+        webSession.onNetworkRestored = { [weak self] in
+            self?.webSession.openPortal()
+        }
         let controller = FloatingPanelController(
             store: store,
             onAuthorize: { [weak self] in self?.showAuthorization() },

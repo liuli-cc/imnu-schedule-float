@@ -83,6 +83,7 @@ enum SyncState: Equatable {
     case sample
     case syncing
     case ready(Date)
+    case offline
     case needsAuthorization
     case failed(String)
 
@@ -92,6 +93,7 @@ enum SyncState: Equatable {
         case .syncing: return "正在读取本学期课表"
         case .ready:
             return "已同步"
+        case .offline: return "网络不可用，正在使用已缓存的课表"
         case .needsAuthorization: return "登录已失效，请重新授权"
         case .failed(let reason): return reason
         }

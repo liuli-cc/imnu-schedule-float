@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import Network
 import SwiftUI
 import WebKit
 
@@ -8,8 +9,11 @@ final class WebSession: NSObject, ObservableObject {
     let webView: WKWebView
     @Published var pageStatus = "尚未打开授权页面"
     @Published private(set) var isLoggedIn = false
+    @Published private(set) var isNetworkAvailable = true
+    var onNetworkRestored: (() -> Void)?
     private weak var scheduleStore: ScheduleStore?
     private var hasTriggeredAuthenticatedSync = false
+    private let networkMonitor = NWPathMonitor()
 
     override init() {
         let configuration = WKWebViewConfiguration()
@@ -18,7 +22,25 @@ final class WebSession: NSObject, ObservableObject {
         webView = WKWebView(frame: .zero, configuration: configuration)
         super.init()
         webView.navigationDelegate = self
+        networkMonitor.pathUpdateHandler = { [weak self] path in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let available = path.status == .satisfied
+                let restored = !self.isNetworkAvailable && available
+                self.isNetworkAvailable = available
+                if !available {
+                    self.scheduleStore?.markOffline()
+                    self.pageStatus = "网络不可用，已保留本机登录与课表缓存"
+                } else if restored {
+                    self.pageStatus = "网络已恢复，正在重新连接教务系统…"
+                    self.onNetworkRestored?()
+                }
+            }
+        }
+        networkMonitor.start(queue: DispatchQueue(label: "IMNUScheduleFloat.Network"))
     }
+
+    deinit { networkMonitor.cancel() }
 
     func attach(scheduleStore: ScheduleStore) {
         self.scheduleStore = scheduleStore
@@ -26,6 +48,10 @@ final class WebSession: NSObject, ObservableObject {
 
     func openPortal() {
         guard let url = URL(string: "https://jwxt.imnu.edu.cn") else { return }
+        guard isNetworkAvailable else {
+            pageStatus = "网络不可用，正在使用本机课表缓存"
+            return
+        }
         pageStatus = "正在打开教务系统…"
         webView.load(URLRequest(url: url))
     }
@@ -41,6 +67,7 @@ final class WebSession: NSObject, ObservableObject {
     /// vacations; this route instead asks for the selected semester once and
     /// returns every scheduled teaching block.
     func fetchPortalSnapshot() async throws -> PortalSnapshot {
+        guard isNetworkAvailable else { throw PortalError.networkUnavailable }
         guard webView.url?.host == "jwxt.imnu.edu.cn" else { throw PortalError.authorizationRequired }
         let script = #"""
         (async () => {
@@ -132,6 +159,7 @@ final class WebSession: NSObject, ObservableObject {
         if let failure = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            let message = failure["__error"] as? String {
             if message.contains("AUTH_REQUIRED") { throw PortalError.authorizationRequired }
+            if PortalError.isNetworkMessage(message) { throw PortalError.networkUnavailable }
             throw PortalError.remote(message)
         }
         do { return try JSONDecoder().decode(PortalSnapshot.self, from: data) }
@@ -166,7 +194,7 @@ extension WebSession: WKNavigationDelegate {
     nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         Task { @MainActor [weak self] in
             guard let self else { return }
-            let isPortalHome = webView.url?.host == "jwxt.imnu.edu.cn" && webView.url?.path == "/admin"
+            let isPortalHome = webView.url?.host == "jwxt.imnu.edu.cn" && (webView.url?.path == "/admin" || webView.url?.path.hasPrefix("/admin/") == true)
             self.isLoggedIn = isPortalHome
             self.pageStatus = isPortalHome
                 ? "官网登录已恢复，正在读取本学期课表…"
@@ -174,7 +202,13 @@ extension WebSession: WKNavigationDelegate {
             if webView.url?.host?.hasSuffix("imnu.edu.cn") == true {
                 Task { @MainActor [weak self] in await self?.persistCookies() }
             }
-            if isPortalHome, !self.hasTriggeredAuthenticatedSync {
+            let shouldRetryAfterOffline: Bool
+            if case .offline = self.scheduleStore?.syncState {
+                shouldRetryAfterOffline = true
+            } else {
+                shouldRetryAfterOffline = false
+            }
+            if isPortalHome, (!self.hasTriggeredAuthenticatedSync || shouldRetryAfterOffline) {
                 self.hasTriggeredAuthenticatedSync = true
                 Task { @MainActor [weak self] in
                     guard let self else { return }
@@ -185,25 +219,56 @@ extension WebSession: WKNavigationDelegate {
     }
 
     nonisolated func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        Task { @MainActor [weak self] in self?.pageStatus = "页面加载失败：\(error.localizedDescription)" }
+        Task { @MainActor [weak self] in self?.handleLoadFailure(error) }
     }
 
     nonisolated func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        Task { @MainActor [weak self] in self?.pageStatus = "页面加载失败：\(error.localizedDescription)" }
+        Task { @MainActor [weak self] in self?.handleLoadFailure(error) }
+    }
+}
+
+private extension WebSession {
+    func handleLoadFailure(_ error: Error) {
+        if PortalError.isNetworkError(error) {
+            isNetworkAvailable = false
+            scheduleStore?.markOffline()
+            pageStatus = "网络不可用，已保留本机登录与课表缓存"
+        } else {
+            pageStatus = "页面加载失败：\(error.localizedDescription)"
+        }
     }
 }
 
 enum PortalError: LocalizedError {
     case authorizationRequired
+    case networkUnavailable
     case invalidResponse
     case remote(String)
 
     var errorDescription: String? {
         switch self {
         case .authorizationRequired: return "教务登录已失效，请重新扫码授权"
+        case .networkUnavailable: return "网络不可用，正在使用已缓存的课表"
         case .invalidResponse: return "教务系统返回了无法识别的数据"
         case .remote(let message): return "读取教务数据失败：\(message)"
         }
+    }
+
+    static func isNetworkError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain {
+            return true
+        }
+        return isNetworkMessage(error.localizedDescription)
+    }
+
+    static func isNetworkMessage(_ message: String) -> Bool {
+        let value = message.lowercased()
+        return [
+            "failed to fetch", "networkerror", "network connection was lost",
+            "not connected to the internet", "internet connection appears to be offline",
+            "could not connect", "timed out", "offline"
+        ].contains { value.contains($0) }
     }
 }
 
@@ -287,6 +352,9 @@ private struct AuthorizationView: View {
                 if case .ready = store.syncState {
                     Label("课表已自动同步", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(.green)
+                } else if case .offline = store.syncState {
+                    Label("离线模式：正在使用本机课表", systemImage: "wifi.slash")
+                        .foregroundStyle(.orange)
                 } else if webSession.isLoggedIn {
                     Label("官网已登录，正在读取课表", systemImage: "arrow.triangle.2.circlepath")
                         .foregroundStyle(.secondary)

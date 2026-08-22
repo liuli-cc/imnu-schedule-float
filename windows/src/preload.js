@@ -15,3 +15,11 @@ contextBridge.exposeInMainWorld('assistantAPI', {
   clear: () => ipcRenderer.invoke('action:clear'),
   quit: () => ipcRenderer.send('action:quit')
 });
+
+function reportNetworkState() {
+  ipcRenderer.send('network:changed', navigator.onLine);
+}
+
+window.addEventListener('online', reportNetworkState);
+window.addEventListener('offline', reportNetworkState);
+window.addEventListener('DOMContentLoaded', reportNetworkState);

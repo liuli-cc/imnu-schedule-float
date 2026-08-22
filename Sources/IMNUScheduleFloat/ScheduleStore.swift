@@ -40,6 +40,10 @@ final class ScheduleStore: ObservableObject {
     }
 
     func sync(using webSession: WebSession) async {
+        guard webSession.isNetworkAvailable else {
+            markOffline()
+            return
+        }
         syncState = .syncing
         do {
             let snapshot = try await webSession.fetchPortalSnapshot()
@@ -59,9 +63,17 @@ final class ScheduleStore: ObservableObject {
             saveCache(source: "教务系统学期课表")
         } catch PortalError.authorizationRequired {
             syncState = .needsAuthorization
+        } catch PortalError.networkUnavailable {
+            markOffline()
         } catch {
             syncState = .failed(error.localizedDescription)
         }
+    }
+
+    func markOffline() {
+        // Intentionally keep courses, profile, and the persisted session/cache.
+        // A connectivity failure is not evidence that the user logged out.
+        syncState = .offline
     }
 
     func setEndpoint(_ endpoint: String) throws {

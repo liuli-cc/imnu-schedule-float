@@ -226,7 +226,7 @@ private struct FloatingBallView: View {
     private var statusColor: Color {
         switch store.syncState {
         case .ready: return .green
-        case .syncing: return .orange
+        case .syncing, .offline: return .orange
         case .needsAuthorization, .failed: return .red
         case .sample: return .blue
         }
@@ -448,7 +448,7 @@ private struct SchedulePanelView: View {
     private var statusColor: Color {
         switch store.syncState {
         case .ready: return .green
-        case .syncing: return .orange
+        case .syncing, .offline: return .orange
         case .needsAuthorization, .failed: return .red
         case .sample: return .secondary
         }

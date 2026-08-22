@@ -90,6 +90,8 @@ final class FloatingBallControl: NSView {
             color = .systemGreen; label = "课表已同步"
         case .syncing:
             color = .systemOrange; label = "正在同步课表"
+        case .offline:
+            color = .systemOrange; label = "网络不可用，正在使用已缓存的课表"
         case .needsAuthorization, .failed:
             color = .systemRed; label = "课表需要重新授权"
         case .sample:
