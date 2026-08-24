@@ -101,17 +101,25 @@ final class WebSession: NSObject, ObservableObject {
           if (!term) throw new Error('AUTH_REQUIRED');
 
           const form = new URLSearchParams({xnxq:term, xhid, xqdm:campus, zdzc:'', zxzc:'', xskbxslx:'0'});
-          const [courseResponse, profileResponse, gpaResponse, weeksResponse, currentWeekResponse] = await Promise.all([
+          const gradeCategories = [{value:'0', label:'主修'}, {value:'1', label:'辅修'}, {value:'9', label:'微专业'}];
+          const gradeRequests = gradeCategories.map(item => fetch(
+            '/admin/xsd/xsdcjcx/xsdQueryXscjList?fxbz=' + item.value + '&gridtype=jqgrid&_search=false&page.size=500&page.pn=1&sort=xnxq&order=desc&startXnxq=001&endXnxq=001',
+            {credentials:'include', headers:{'X-Requested-With':'XMLHttpRequest', 'Accept':'application/json, text/javascript, */*; q=0.01'}}
+          ));
+          const [courseResponse, profileResponse, gpaResponse, weeksResponse, currentWeekResponse, gradeResponses] = await Promise.all([
             fetch('/admin/xsd/pkgl/xskb/sdpkkbList', {method:'POST', credentials:'include', headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'}, body:form}),
             fetch('/admin/xsd/xskp/xskp?xhid=' + encodeURIComponent(xhid), {credentials:'include'}),
             fetch('/admin/xsd/xsdzgcjcx/getXspjxfjd', {credentials:'include'}),
             fetch('/admin/getCurrentPkZc', {credentials:'include'}),
-            fetch('/admin/api/getXlzc', {credentials:'include'})
+            fetch('/admin/api/getXlzc', {credentials:'include'}),
+            Promise.all(gradeRequests)
           ]);
           if (!courseResponse.ok) throw new Error('COURSE_HTTP_' + courseResponse.status);
-          const [courseJSON, profileJSON, gpaJSON, weeksJSON, currentWeekJSON] = await Promise.all([
+          if (gradeResponses.some(response => /\/login|caslogin/.test(response.url))) throw new Error('AUTH_REQUIRED');
+          const [courseJSON, profileJSON, gpaJSON, weeksJSON, currentWeekJSON, gradeJSONs] = await Promise.all([
             courseResponse.json(), profileResponse.json().catch(() => ({})), gpaResponse.json().catch(() => ({})),
-            weeksResponse.json().catch(() => ({})), currentWeekResponse.json().catch(() => ({}))
+            weeksResponse.json().catch(() => ({})), currentWeekResponse.json().catch(() => ({})),
+            Promise.all(gradeResponses.map(response => response.json().catch(() => null)))
           ]);
           if (courseJSON.ret !== 0) throw new Error(courseJSON.msg || 'COURSE_RESPONSE');
           const rawProfile = profileJSON && profileJSON.data || {};
@@ -135,6 +143,24 @@ final class WebSession: NSObject, ObservableObject {
           }).filter(item => item.name && item.weekday > 0);
           const allWeeks = Array.isArray(weeksJSON.data) ? weeksJSON.data.map(Number).filter(Number.isFinite) : [];
           const currentWeek = Number(currentWeekJSON?.data?.xlzc || currentWeekJSON?.data?.zc || 0) || null;
+          const successfulGradeResponses = gradeJSONs
+            .map((payload, categoryIndex) => ({payload, categoryIndex}))
+            .filter(item => item.payload && item.payload.ret === 0);
+          const grades = successfulGradeResponses.length ? successfulGradeResponses.flatMap(({payload, categoryIndex}) => {
+            const records = Array.isArray(payload.results) ? payload.results : [];
+            const category = gradeCategories[categoryIndex]?.label || '主修';
+            return records.map((item, index) => ({
+              id: text(item.id) || [text(item.xnxq), text(item.kcbh), category, index].join('|'),
+              term: text(item.xnxq),
+              courseName: plain(item.kcmc).replace(/^\[[^\]]+\]\s*/, ''),
+              score: text(item.zhcj || item.yscj),
+              credit: text(item.xf),
+              gradePoint: text(item.jd),
+              courseNature: text(item.kcxzmc || item.kcxz),
+              examType: text(item.ksxs),
+              category
+            })).filter(item => item.courseName);
+          }) : null;
           return JSON.stringify({
             term,
             maxWeek: allWeeks.length ? Math.max(...allWeeks) : 19,
@@ -144,7 +170,8 @@ final class WebSession: NSObject, ObservableObject {
               name: profileName,
               gpa: profileGPA
             },
-            courses
+            courses,
+            grades
           });
         })().catch(error => JSON.stringify({__error:String(error && error.message || error)}))
         """#
@@ -284,6 +311,7 @@ final class AuthorizationWindowController: NSWindowController {
     private let store: ScheduleStore
     private let webSession: WebSession
     private var syncObservation: AnyCancellable?
+    private let navigation = PortalWindowNavigation()
 
     init(store: ScheduleStore, webSession: WebSession) {
         self.store = store
@@ -294,13 +322,13 @@ final class AuthorizationWindowController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "教务悬浮助手 · 首次授权"
+        window.title = "教务悬浮助手"
         window.minSize = NSSize(width: 700, height: 520)
         super.init(window: window)
         window.center()
-        window.contentView = NSHostingView(rootView: AuthorizationView(store: store, webSession: webSession))
-        syncObservation = store.$syncState.sink { [weak window] state in
-            if case .ready = state { window?.orderOut(nil) }
+        window.contentView = NSHostingView(rootView: AuthorizationView(store: store, webSession: webSession, navigation: navigation))
+        syncObservation = store.$syncState.sink { [weak self, weak window] state in
+            if case .ready = state, self?.navigation.destination == .authorization { window?.orderOut(nil) }
         }
     }
 
@@ -308,17 +336,35 @@ final class AuthorizationWindowController: NSWindowController {
         fatalError("AuthorizationWindowController must be created programmatically")
     }
 
-    func show() {
+    func showAuthorization() {
+        navigation.destination = .authorization
+        window?.title = "教务悬浮助手 · 授权登录"
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         if webSession.webView.url == nil { webSession.openPortal() }
     }
+
+    func showPortalHome() {
+        navigation.destination = .portalHome
+        window?.title = "教务悬浮助手 · 教务系统首页"
+        showWindow(nil)
+        window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        webSession.openPortal()
+    }
+}
+
+@MainActor
+private final class PortalWindowNavigation: ObservableObject {
+    enum Destination { case authorization, portalHome }
+    @Published var destination: Destination = .authorization
 }
 
 private struct AuthorizationView: View {
     @ObservedObject var store: ScheduleStore
     @ObservedObject var webSession: WebSession
+    @ObservedObject var navigation: PortalWindowNavigation
 
     var body: some View {
         VStack(spacing: 0) {
@@ -327,15 +373,17 @@ private struct AuthorizationView: View {
                     .font(.title2)
                     .foregroundStyle(.blue)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("首次授权只需完成一次")
+                    Text(navigation.destination == .portalHome ? "教务系统首页" : "首次授权只需完成一次")
                         .font(.headline)
-                    Text("请使用微信扫描页面二维码。扫码成功后，程序会自动打开“主修课表”、识别官网返回的数据并缓存到本机，无需粘贴任何链接。若已经显示教务系统首页，说明授权已恢复，稍候即可。")
+                    Text(headerDescription)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
-                Button("重新打开官网") { webSession.openPortal() }
+                Button(navigation.destination == .portalHome ? "重新打开首页" : "重新打开官网") {
+                    webSession.openPortal()
+                }
             }
             .padding(16)
 
@@ -367,5 +415,12 @@ private struct AuthorizationView: View {
             .padding(14)
         }
         .frame(minWidth: 700, minHeight: 520)
+    }
+
+    private var headerDescription: String {
+        if navigation.destination == .portalHome {
+            return "此页直接使用悬浮助手已保存的官方登录会话。授权仍有效时会直接显示教务系统首页，不需要再次扫码。"
+        }
+        return "请使用微信扫描页面二维码。扫码成功后，程序会自动读取课表、成绩和个人信息并缓存到本机，无需粘贴任何链接。"
     }
 }

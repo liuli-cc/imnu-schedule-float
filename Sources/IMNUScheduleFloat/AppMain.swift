@@ -27,6 +27,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
             store: store,
             onAuthorize: { [weak self] in self?.showAuthorization() },
             onSync: { [weak self] in self?.syncNow() },
+            onPortalHome: { [weak self] in self?.showPortalHome() },
             onQuit: { NSApp.terminate(nil) }
         )
         floatingController = controller
@@ -57,7 +58,14 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         if authorizationWindow == nil {
             authorizationWindow = AuthorizationWindowController(store: store, webSession: webSession)
         }
-        authorizationWindow?.show()
+        authorizationWindow?.showAuthorization()
+    }
+
+    private func showPortalHome() {
+        if authorizationWindow == nil {
+            authorizationWindow = AuthorizationWindowController(store: store, webSession: webSession)
+        }
+        authorizationWindow?.showPortalHome()
     }
 
     private func syncNow() {
@@ -71,6 +79,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "显示 / 收起课表", action: #selector(toggleSchedule), keyEquivalent: "")
         menu.addItem(withTitle: "立即同步", action: #selector(syncMenuItem), keyEquivalent: "r")
         menu.addItem(withTitle: "首次授权或重新登录", action: #selector(authorizeMenuItem), keyEquivalent: "l")
+        menu.addItem(withTitle: "打开教务系统首页", action: #selector(portalHomeMenuItem), keyEquivalent: "i")
         menu.addItem(.separator())
         menu.addItem(withTitle: "退出教务悬浮助手", action: #selector(quit), keyEquivalent: "q")
         for item in menu.items { item.target = self }
@@ -94,5 +103,6 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     @objc private func toggleSchedule() { floatingController?.toggleSchedule() }
     @objc private func syncMenuItem() { syncNow() }
     @objc private func authorizeMenuItem() { showAuthorization() }
+    @objc private func portalHomeMenuItem() { showPortalHome() }
     @objc private func quit() { NSApp.terminate(nil) }
 }

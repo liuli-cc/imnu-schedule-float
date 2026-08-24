@@ -53,6 +53,24 @@ struct StudentProfile: Codable, Equatable {
     static let empty = StudentProfile(studentNumber: "", name: "", gpa: "")
 }
 
+struct GradeRecord: Codable, Identifiable, Hashable {
+    var id: String
+    var term: String
+    var courseName: String
+    var score: String
+    var credit: String
+    var gradePoint: String
+    var courseNature: String
+    var examType: String
+    var category: String
+
+    var termLabel: String {
+        let parts = term.split(separator: "-")
+        guard parts.count >= 3 else { return term }
+        return "\(parts[0])-\(parts[1])学年第\(parts[2])学期"
+    }
+}
+
 struct ScheduleCache: Codable {
     var courses: [Course]
     var updatedAt: Date
@@ -60,6 +78,8 @@ struct ScheduleCache: Codable {
     var profile: StudentProfile?
     var term: String?
     var maxWeek: Int?
+    var grades: [GradeRecord]?
+    var gradesUpdatedAt: Date?
 }
 
 struct PortalSnapshot: Decodable {
@@ -68,6 +88,7 @@ struct PortalSnapshot: Decodable {
     var currentWeek: Int?
     var profile: StudentProfile
     var courses: [PortalCoursePayload]
+    var grades: [PortalGradePayload]?
 }
 
 struct PortalCoursePayload: Decodable {
@@ -77,6 +98,18 @@ struct PortalCoursePayload: Decodable {
     var weekday: Int
     var section: String
     var weeks: String
+}
+
+struct PortalGradePayload: Decodable {
+    var id: String
+    var term: String
+    var courseName: String
+    var score: String
+    var credit: String
+    var gradePoint: String
+    var courseNature: String
+    var examType: String
+    var category: String
 }
 
 enum SyncState: Equatable {

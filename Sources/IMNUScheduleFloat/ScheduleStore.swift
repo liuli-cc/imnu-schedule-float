@@ -10,6 +10,8 @@ final class ScheduleStore: ObservableObject {
     @Published private(set) var currentTerm = ""
     @Published private(set) var maxWeek = 19
     @Published private(set) var currentWeek: Int?
+    @Published private(set) var grades: [GradeRecord] = []
+    @Published private(set) var gradesUpdatedAt: Date?
 
     private let cacheURL: URL
     private var refreshTimer: Timer?
@@ -57,10 +59,26 @@ final class ScheduleStore: ObservableObject {
             currentTerm = snapshot.term
             maxWeek = max(snapshot.maxWeek, 1)
             currentWeek = snapshot.currentWeek
+            if let gradePayloads = snapshot.grades {
+                grades = gradePayloads.map {
+                    GradeRecord(
+                        id: $0.id,
+                        term: $0.term,
+                        courseName: $0.courseName,
+                        score: $0.score,
+                        credit: $0.credit,
+                        gradePoint: $0.gradePoint,
+                        courseNature: $0.courseNature,
+                        examType: $0.examType,
+                        category: $0.category
+                    )
+                }
+                gradesUpdatedAt = Date()
+            }
             lastUpdated = Date()
             syncState = .ready(Date())
-            webSession.pageStatus = "本学期课表与个人信息已保存到本机"
-            saveCache(source: "教务系统学期课表")
+            webSession.pageStatus = "课表、成绩与个人信息已保存到本机"
+            saveCache(source: "教务系统课表与成绩")
         } catch PortalError.authorizationRequired {
             syncState = .needsAuthorization
         } catch PortalError.networkUnavailable {
@@ -114,6 +132,8 @@ final class ScheduleStore: ObservableObject {
         profile = .empty
         currentTerm = ""
         currentWeek = nil
+        grades = []
+        gradesUpdatedAt = nil
         try? FileManager.default.removeItem(at: cacheURL)
         syncState = .sample
     }
@@ -143,6 +163,8 @@ final class ScheduleStore: ObservableObject {
         currentTerm = cached.term ?? ""
         maxWeek = max(cached.maxWeek ?? 19, 1)
         lastUpdated = cached.updatedAt
+        grades = cached.grades ?? []
+        gradesUpdatedAt = cached.gradesUpdatedAt
         syncState = .ready(cached.updatedAt)
     }
 
@@ -154,10 +176,28 @@ final class ScheduleStore: ObservableObject {
             source: source,
             profile: profile,
             term: currentTerm,
-            maxWeek: maxWeek
+            maxWeek: maxWeek,
+            grades: grades,
+            gradesUpdatedAt: gradesUpdatedAt
         )
         guard let data = try? JSONEncoder().encode(cache) else { return }
-        try? data.write(to: cacheURL, options: .atomic)
+        do {
+            try data.write(to: cacheURL, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: cacheURL.path)
+        } catch {
+            // Keep the in-memory data usable if local persistence fails.
+        }
+    }
+
+    var gradeTerms: [String] {
+        Array(Set(grades.map(\.term))).sorted(by: >)
+    }
+
+    func grades(forTerm term: String) -> [GradeRecord] {
+        grades.filter { $0.term == term }.sorted {
+            if $0.category != $1.category { return $0.category < $1.category }
+            return $0.courseName.localizedStandardCompare($1.courseName) == .orderedAscending
+        }
     }
 
     private static func course(from payload: PortalCoursePayload, colorIndex: Int) -> Course? {
