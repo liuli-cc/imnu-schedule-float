@@ -463,6 +463,18 @@ function ensurePortalWindow(show = false) {
   return portalWindow;
 }
 
+function openPortalHome() {
+  const window = ensurePortalWindow(true);
+  let pathname = '';
+  try { pathname = new URL(window.webContents.getURL()).pathname; } catch {}
+  if (!['/admin', '/admin/'].includes(pathname)) {
+    window.loadURL(PORTAL_URL).catch(error => {
+      if (isNetworkError(error)) markOffline();
+      else setStatus('failed', `打开教务系统首页失败：${error.message}`);
+    });
+  }
+}
+
 function showPanel() {
   if (!panelWindow || !ballWindow) return;
   const ball = ballWindow.getBounds();
@@ -561,7 +573,7 @@ function registerIPC() {
   ipcMain.on('ball:drag-end', finishBallDrag);
   ipcMain.on('panel:hide', () => panelWindow?.hide());
   ipcMain.on('action:authorize', () => ensurePortalWindow(true));
-  ipcMain.on('action:portal-home', () => ensurePortalWindow(true));
+  ipcMain.on('action:portal-home', openPortalHome);
   ipcMain.on('action:sync', () => syncSchedule({ showLogin: true }));
   ipcMain.on('network:changed', (_event, online) => {
     networkOnline = Boolean(online);
