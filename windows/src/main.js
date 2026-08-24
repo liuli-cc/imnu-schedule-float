@@ -24,6 +24,8 @@ let state = {
   message: '尚未同步真实课表',
   courses: [],
   profile: { name: '', studentNumber: '', gpa: '' },
+  grades: [],
+  gradesUpdatedAt: null,
   term: '',
   maxWeek: 19,
   currentWeek: null,
@@ -62,12 +64,22 @@ const SNAPSHOT_SCRIPT = `
   if (!term) throw new Error('AUTH_REQUIRED');
 
   const form = new URLSearchParams({xnxq:term, xhid, xqdm:campus, zdzc:'', zxzc:'', xskbxslx:'0'});
-  const [courseResponse, profileResponse, gpaResponse, weeksResponse, currentWeekResponse] = await Promise.all([
+  const gradeCategories = [
+    {value:'0', label:'主修'},
+    {value:'1', label:'辅修'},
+    {value:'9', label:'微专业'}
+  ];
+  const gradeRequests = gradeCategories.map(item => fetch(
+    '/admin/xsd/xsdcjcx/xsdQueryXscjList?fxbz=' + item.value + '&gridtype=jqgrid&_search=false&page.size=500&page.pn=1&sort=xnxq&order=desc&startXnxq=001&endXnxq=001',
+    {credentials:'include', headers:{'X-Requested-With':'XMLHttpRequest', 'Accept':'application/json, text/javascript, */*; q=0.01'}}
+  ));
+  const [courseResponse, profileResponse, gpaResponse, weeksResponse, currentWeekResponse, ...gradeResponses] = await Promise.all([
     fetch('/admin/xsd/pkgl/xskb/sdpkkbList', {method:'POST', credentials:'include', headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'}, body:form}),
     fetch('/admin/xsd/xskp/xskp?xhid=' + encodeURIComponent(xhid), {credentials:'include'}),
     fetch('/admin/xsd/xsdzgcjcx/getXspjxfjd', {credentials:'include'}),
     fetch('/admin/getCurrentPkZc', {credentials:'include'}),
-    fetch('/admin/api/getXlzc', {credentials:'include'})
+    fetch('/admin/api/getXlzc', {credentials:'include'}),
+    ...gradeRequests
   ]);
   if (!courseResponse.ok) throw new Error('COURSE_HTTP_' + courseResponse.status);
   const [courseJSON, profileJSON, gpaJSON, weeksJSON, currentWeekJSON] = await Promise.all([
@@ -91,6 +103,25 @@ const SNAPSHOT_SCRIPT = `
       weeks: text(item.zcstr || item.zc)
     };
   }).filter(item => item.name && item.weekday > 0);
+  const gradeJSONs = await Promise.all(gradeResponses.map(response => response.json().catch(() => ({}))));
+  const successfulGradeResponses = gradeJSONs
+    .map((payload, categoryIndex) => ({payload, categoryIndex}))
+    .filter(item => item.payload && item.payload.ret === 0);
+  const grades = successfulGradeResponses.length ? successfulGradeResponses.flatMap(({payload, categoryIndex}) => {
+    const category = gradeCategories[categoryIndex]?.label || '主修';
+    const records = Array.isArray(payload.results) ? payload.results : [];
+    return records.map((item, index) => ({
+      id: text(item.id) || [text(item.xnxq), text(item.kcbh), category, index].join('|'),
+      term: text(item.xnxq),
+      courseName: plain(item.kcmc).replace(/^\[[^\]]+\]\s*/, ''),
+      score: text(item.zhcj || item.yscj),
+      credit: text(item.xf),
+      gradePoint: text(item.jd),
+      courseNature: text(item.kcxzmc || item.kcxz),
+      examType: text(item.ksxs),
+      category
+    })).filter(item => item.courseName);
+  }) : null;
   const allWeeks = Array.isArray(weeksJSON.data) ? weeksJSON.data.map(Number).filter(Number.isFinite) : [];
   const currentWeek = Number(currentWeekJSON?.data?.xlzc || currentWeekJSON?.data?.zc || 0) || null;
   return JSON.stringify({
@@ -102,7 +133,8 @@ const SNAPSHOT_SCRIPT = `
       name: text(rawProfile.xm) || text(identity[0]),
       gpa: text(gpaJSON?.data) || text(document.querySelector('#pjxfjd')?.textContent)
     },
-    courses
+    courses,
+    grades
   });
 })().catch(error => JSON.stringify({__error:String(error?.message || error)}));`;
 
@@ -240,7 +272,7 @@ function isNetworkError(error) {
 }
 
 function markOffline() {
-  setStatus('offline', '网络不可用，正在使用已缓存的课表');
+  setStatus('offline', '网络不可用，正在使用已缓存的课表和成绩');
 }
 
 function reloadPortalAfterNetworkRecovery() {
@@ -279,7 +311,7 @@ async function syncSchedule({ showLogin = false } = {}) {
   }
 
   syncInProgress = true;
-  setStatus('syncing', '正在读取本学期课表');
+  setStatus('syncing', '正在读取课表和全部成绩');
   try {
     const result = await portalWindow.webContents.executeJavaScript(SNAPSHOT_SCRIPT, true);
     const snapshot = JSON.parse(result);
@@ -294,6 +326,8 @@ async function syncSchedule({ showLogin = false } = {}) {
       message: '已同步',
       courses,
       profile: { name: '', studentNumber: '', gpa: '', ...(snapshot.profile || {}) },
+      grades: Array.isArray(snapshot.grades) ? snapshot.grades : state.grades,
+      gradesUpdatedAt: Array.isArray(snapshot.grades) ? new Date().toISOString() : state.gradesUpdatedAt,
       term: snapshot.term || '',
       maxWeek: Math.max(Number(snapshot.maxWeek) || 19, 1),
       currentWeek: Number(snapshot.currentWeek) || null,
@@ -527,6 +561,7 @@ function registerIPC() {
   ipcMain.on('ball:drag-end', finishBallDrag);
   ipcMain.on('panel:hide', () => panelWindow?.hide());
   ipcMain.on('action:authorize', () => ensurePortalWindow(true));
+  ipcMain.on('action:portal-home', () => ensurePortalWindow(true));
   ipcMain.on('action:sync', () => syncSchedule({ showLogin: true }));
   ipcMain.on('network:changed', (_event, online) => {
     networkOnline = Boolean(online);
@@ -544,7 +579,7 @@ function registerIPC() {
     }
     state = {
       syncStatus: 'sample', message: '尚未同步真实课表', courses: [],
-      profile: { name: '', studentNumber: '', gpa: '' }, term: '', maxWeek: 19,
+      profile: { name: '', studentNumber: '', gpa: '' }, grades: [], gradesUpdatedAt: null, term: '', maxWeek: 19,
       currentWeek: null, updatedAt: null
     };
     broadcastState();

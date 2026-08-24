@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('assistantAPI', {
   revealBall: () => ipcRenderer.send('ball:reveal'),
   hidePanel: () => ipcRenderer.send('panel:hide'),
   authorize: () => ipcRenderer.send('action:authorize'),
+  portalHome: () => ipcRenderer.send('action:portal-home'),
   sync: () => ipcRenderer.send('action:sync'),
   clear: () => ipcRenderer.invoke('action:clear'),
   quit: () => ipcRenderer.send('action:quit')

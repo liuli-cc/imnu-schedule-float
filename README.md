@@ -27,6 +27,6 @@ open 'dist/教务悬浮助手.app'
 
 ## Windows 版
 
-Windows 10/11 x64 用户可直接运行 `windows/dist/IMNU-Schedule-Float-Windows-x64-1.0.3-Setup.exe`。安装版自带运行环境，不需要安装 Python、Node.js 或其他依赖。首次启动完成统一身份认证后，登录会话保存在当前 Windows 用户目录，后续启动会自动恢复并同步；断网时会保留登录会话和已缓存的课表。
+Windows 10/11 x64 用户可直接运行 `windows/dist/教务悬浮助手-Windows-1.0.4-x64-安装包.exe`。安装版自带运行环境，不需要安装 Python、Node.js 或其他依赖。首次启动完成统一身份认证后，登录会话保存在当前 Windows 用户目录，后续启动会自动恢复并同步课表、全部学期成绩和绩点；断网时会保留登录会话和已缓存的课表、成绩。Windows 版也支持“成绩查询”的全部学期与学期子菜单筛选。
 
 Windows 安装包在 macOS 上交叉构建，已完成 PE/NSIS 格式、应用资源和本机 Electron 启动检查；真实 Windows 安装、系统托盘、跨屏拖拽和开机环境尚需在 Windows 10/11 x64 设备上验收。安装包没有商业代码签名证书，Windows SmartScreen 可能显示“未知发布者”。

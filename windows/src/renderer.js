@@ -3,10 +3,12 @@ const mode = new URLSearchParams(location.search).get('mode') || 'panel';
 const weekdayLabels = ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日'];
 let appState = {
   syncStatus: 'sample', message: '尚未同步真实课表', courses: [],
-  profile: { name: '', studentNumber: '', gpa: '' }, term: '', maxWeek: 19, currentWeek: null
+  profile: { name: '', studentNumber: '', gpa: '' }, grades: [], gradesUpdatedAt: null,
+  term: '', maxWeek: 19, currentWeek: null
 };
 let selectedView = 'today';
 let selectedWeek = 1;
+let selectedGradeTerm = 'all';
 const CLASS_TIME_BLOCKS = [
   { startSection: 1, endSection: 2, start: '08:20', end: '10:00' },
   { startSection: 3, endSection: 4, start: '10:20', end: '12:00' },
@@ -157,6 +159,11 @@ function renderViewContent(container) {
     return;
   }
 
+  if (selectedView === 'grades') {
+    renderGrades(container);
+    return;
+  }
+
   const semesterHeader = element('div', 'semester-header');
   semesterHeader.append(element('span', null, appState.term || '本学期课表'));
   semesterHeader.append(element('strong', null, `第 ${selectedWeek} 周`));
@@ -173,6 +180,82 @@ function renderViewContent(container) {
   container.append(groupedCourseList(coursesForWeek(selectedWeek)));
 }
 
+function termLabel(term) {
+  const value = String(term || '').trim();
+  const parts = value.split('-');
+  return parts.length >= 3 ? `${parts[0]}-${parts[1]}学年第${parts[2]}学期` : (value || '未知学期');
+}
+
+function gradeTerms() {
+  return [...new Set((Array.isArray(appState.grades) ? appState.grades : [])
+    .map(item => String(item.term || '').trim()).filter(Boolean))]
+    .sort((a, b) => b.localeCompare(a, 'zh-CN'));
+}
+
+function renderGrades(container) {
+  const grades = Array.isArray(appState.grades) ? appState.grades : [];
+  const terms = gradeTerms();
+  if (selectedGradeTerm !== 'all' && !terms.includes(selectedGradeTerm)) selectedGradeTerm = 'all';
+
+  const toolbar = element('div', 'grade-toolbar');
+  const toolbarText = element('div', 'grade-toolbar-text');
+  toolbarText.append(element('strong', null, '成绩范围'));
+  toolbarText.append(element('span', null, grades.length ? `已同步 ${grades.length} 门课程` : '等待联网同步全部成绩'));
+  const menu = element('details', 'grade-menu');
+  const summary = element('summary', null, selectedGradeTerm === 'all' ? '全部学期' : termLabel(selectedGradeTerm));
+  menu.append(summary);
+  const allButton = element('button', selectedGradeTerm === 'all' ? 'selected' : '', '全部学期');
+  allButton.type = 'button';
+  allButton.addEventListener('click', () => { selectedGradeTerm = 'all'; renderPanel(); });
+  menu.append(allButton);
+  if (terms.length) {
+    menu.append(element('div', 'grade-submenu-label', '按学期查看'));
+    terms.forEach((term, index) => {
+      const label = index === 0 ? `最近学期 · ${termLabel(term)}` : termLabel(term);
+      const button = element('button', selectedGradeTerm === term ? 'selected' : '', label);
+      button.type = 'button';
+      button.addEventListener('click', () => { selectedGradeTerm = term; renderPanel(); });
+      menu.append(button);
+    });
+  }
+  toolbar.append(toolbarText, menu);
+  container.append(toolbar);
+
+  if (!grades.length) {
+    container.append(emptyState('暂无成绩缓存', '联网后点击“立即同步”，即可读取官网的全部学期成绩。'));
+    return;
+  }
+
+  const visibleTerms = selectedGradeTerm === 'all' ? terms : [selectedGradeTerm];
+  const visibleGrades = visibleTerms.flatMap(term => grades.filter(item => item.term === term));
+  const gradeSummary = element('div', 'grade-summary');
+  const totalCredits = visibleGrades.reduce((sum, item) => sum + (Number.parseFloat(item.credit) || 0), 0);
+  const points = visibleGrades.map(item => Number.parseFloat(item.gradePoint)).filter(Number.isFinite);
+  const averagePoint = points.length ? (points.reduce((sum, value) => sum + value, 0) / points.length).toFixed(2) : '—';
+  gradeSummary.append(element('span', null, `${visibleGrades.length} 门课程`));
+  gradeSummary.append(element('span', null, `学分 ${totalCredits ? totalCredits.toFixed(1) : '—'}`));
+  gradeSummary.append(element('span', null, `平均绩点 ${averagePoint}`));
+  container.append(gradeSummary);
+
+  visibleTerms.forEach(term => {
+    const rows = grades.filter(item => item.term === term);
+    if (!rows.length) return;
+    container.append(element('h3', 'grade-term-heading', termLabel(term)));
+    rows.forEach(grade => {
+      const row = element('article', 'grade-row');
+      const main = element('div', 'grade-main');
+      main.append(element('strong', null, grade.courseName || '未命名课程'));
+      const metadata = [grade.category, grade.credit ? `${grade.credit} 学分` : '', grade.courseNature, grade.examType].filter(Boolean).join(' · ');
+      if (metadata) main.append(element('span', 'grade-meta', metadata));
+      const result = element('div', 'grade-result');
+      result.append(element('strong', 'grade-score', grade.score || '—'));
+      result.append(element('span', 'grade-point', `绩点 ${grade.gradePoint || '—'}`));
+      row.append(main, result);
+      container.append(row);
+    });
+  });
+}
+
 function renderPanel() {
   document.body.className = 'panel-page';
   appRoot.replaceChildren();
@@ -187,9 +270,12 @@ function renderPanel() {
   title.append(element('p', `sync-label sync-${appState.syncStatus}`, appState.message));
   header.append(title);
   if (appState.profile?.name || appState.profile?.studentNumber) {
-    const profile = element('div', 'profile');
+    const profile = element('button', 'profile profile-button');
+    profile.type = 'button';
+    profile.title = '打开教务系统首页';
     profile.append(element('strong', null, [appState.profile.name, appState.profile.studentNumber].filter(Boolean).join(' · ')));
     profile.append(element('span', null, `绩点 ${appState.profile.gpa || '—'}`));
+    profile.addEventListener('click', () => window.assistantAPI.portalHome());
     header.append(profile);
   }
   const close = element('button', 'close-button', '×');
@@ -200,7 +286,7 @@ function renderPanel() {
   panel.append(header);
 
   const tabs = element('nav', 'tabs');
-  tabs.append(tabButton('今天', 'today'), tabButton('本周', 'week'), tabButton('本学期', 'semester'));
+  tabs.append(tabButton('今天', 'today'), tabButton('本周', 'week'), tabButton('本学期', 'semester'), tabButton('成绩查询', 'grades'));
   panel.append(tabs);
 
   const content = element('div', 'panel-content');
