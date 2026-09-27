@@ -11,7 +11,7 @@ import shutil
 import zipfile
 
 ROOT = Path(__file__).resolve().parent
-VERSION = '1.1.1'
+VERSION = '1.1.2'
 NAME = '内师大课表'
 UTC = dt.timezone.utc
 SHANGHAI = dt.timezone(dt.timedelta(hours=8))

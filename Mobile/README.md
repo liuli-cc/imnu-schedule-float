@@ -28,7 +28,7 @@ python3 Mobile/export-mobile.py \
 
 ```sh
 node Mobile/tests.cjs
-python3 Mobile/export-mobile.py --generic --output release-out/IMNU-iPhone-Widget-1.1.1
+python3 Mobile/export-mobile.py --generic --output release-out/IMNU-iPhone-Widget-1.1.2
 ```
 
 `core.js` 处理 Asia/Shanghai 日期、官网周锚、单双周、课程时间、状态和刷新边界。`widget.js` 仅调用 Scriptable 官方 API，`panel.html` 为离线完整课表。`export-mobile.py` 将其拼成单文件，并生成备用 JS、说明和 SHA256。专用包只能放在忽略的输出目录或仓库外，禁止提交私人课表。

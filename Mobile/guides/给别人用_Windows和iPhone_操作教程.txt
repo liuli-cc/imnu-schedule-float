@@ -1,5 +1,5 @@
 Windows 电脑 + iPhone：一步一步安装课表小组件
-适用版本：iPhone 小组件 1.1.1
+适用版本：iPhone 小组件 1.1.2
 
 这是纯文字教程，不需要“帮助别人制作工具包”、Python、命令行或 Mac。
 适用于内蒙古师范大学教务助手。其他学校不能直接照搬学校数据接口与上课时间。
@@ -40,8 +40,8 @@ https://github.com/liuli-cc/imnu-schedule-float/releases/tag/v1.1.1
 三、下载手机脚本
 ────────────────────
 1. 电脑浏览器打开：
-https://github.com/liuli-cc/imnu-schedule-float/releases/tag/iphone-widget-v1.1.1
-2. 在 Assets 中下载 IMNU-iPhone-Widget-1.1.1.zip。
+https://github.com/liuli-cc/imnu-schedule-float/releases/tag/iphone-widget-v1.1.2
+2. 在 Assets 中下载 IMNU-iPhone-Widget-1.1.2.zip。
    这是手机脚本安装文件，不是制作工具包。
 3. Windows 中右键这个 ZIP→“全部解压”。
 4. 打开解压后的文件夹，找到“内师大课表.scriptable”。
@@ -160,7 +160,7 @@ Windows 没有系统原生隔空投送。这里统一用自己的 iCloud Drive�
 ────────────────────
 九、最常见的几个问题
 ────────────────────
-运行没东西：确认运行的是新课表脚本，不是 Untitled Script；版本至少 1.1.1。
+运行没东西：确认运行的是新课表脚本，不是 Untitled Script；版本至少 1.1.2。
 旧课程：明确导入刚上传的 schedule-cache.json；先确认电脑同步成功。
 旧背景：确认在 iCloud Drive/Scriptable/IMNU-widget/background.png，
 运行一次脚本并看中号预览；不要放在“我的 iPhone”里的同名文件夹。

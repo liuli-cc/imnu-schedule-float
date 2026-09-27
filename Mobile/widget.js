@@ -209,7 +209,7 @@ async function phoneView() {
     }
     return request.url==='about:blank' || request.url.startsWith('data:') || request.url.startsWith('file:');
   };
-  await load(); await view.present(false);
+  await load(); await view.present(true);
 }
 async function main() {
   data = await loadData();
