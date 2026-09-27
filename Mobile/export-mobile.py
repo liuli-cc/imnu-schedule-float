@@ -10,7 +10,7 @@ import shutil
 import zipfile
 
 ROOT = Path(__file__).resolve().parent
-VERSION = '1.0.0'
+VERSION = '1.0.1'
 NAME = '内师大课表'
 UTC = dt.timezone.utc
 SHANGHAI = dt.timezone(dt.timedelta(hours=8))
@@ -80,7 +80,9 @@ def build(output, data, refresh=False):
     core = (ROOT / 'core.js').read_text()
     panel = (ROOT / 'panel.html').read_text().replace('/* __MOBILE_CORE__ */', core)
     script = (ROOT / 'widget.js').read_text().replace('/* __MOBILE_CORE__ */', core)
-    script = script.replace('/* __MOBILE_DATA__ */', script_json(data))
+    # The marker also appears quoted in phoneView's runtime replacement. Only
+    # embed the first occurrence; the quoted marker must stay intact.
+    script = script.replace('/* __MOBILE_DATA__ */', script_json(data), 1)
     script = script.replace('/* __MOBILE_HTML__ */', script_json(panel.replace('/* __MOBILE_HOST__ */', 'true')))
     (output / (NAME + '.js')).write_text(script)
     (output / (NAME + '.scriptable')).write_text(json.dumps(scriptable_manifest(script), ensure_ascii=False, indent=2))

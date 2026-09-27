@@ -136,7 +136,7 @@ async function phoneView() {
   const view = new WebView(); let busy = false;
   async function load() {
     const serialized=JSON.stringify(data).replace(/</g,'\\u003c').replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029');
-    await view.loadHTML(PHONE_HTML.replace('/* __MOBILE_DATA__ */',serialized));
+    await view.loadHTML(PHONE_HTML.replace('/* __MOBILE_DATA__ */',()=>serialized));
   }
   view.shouldAllowRequest = request => {
     if(request.url.startsWith('imnuwidget://')) {

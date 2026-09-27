@@ -71,6 +71,7 @@ const sandbox={Date,Set,Math,Number,JSON,Error,Array,String,Promise,console,Colo
 const context=vm.createContext(sandbox);
 function allText(node){return [node.value||'',...(node.children||[]).flatMap(allText)].filter(Boolean).join(' ');}
 async function main(){
+  let previewHTML='';
   await vm.runInContext('(async()=>{'+script.replace('await main();','globalThis.build=buildWidget; globalThis.run=main;')+'})()',context);
   for(const family of ['small','medium','large','accessoryInline','accessoryCircular','accessoryRectangular']){
     const widget=sandbox.build(demo,family,now,'');assert.ok(allText(widget).includes(family==='accessoryCircular'?'08:20':'示例'));assert.ok(widget.url.startsWith('scriptable:'));assert.ok(widget.refreshAfterDate>now);checks++;console.log('PASS Scriptable API 模拟 · '+family);
@@ -88,6 +89,27 @@ async function main(){
     const exported=JSON.parse(fs.readFileSync(path.join(output,'内师大课表.json'),'utf8'));assert.equal(exported.weekAnchorDate,'2026-09-07');assert.equal(exported.updatedAt,'2026-09-27T05:00:00Z');assert.equal(Core.validate(exported).grades[0].score,'0');
     for(const file of fs.readdirSync(output)){const body=fs.readFileSync(path.join(output,file),'utf8');assert.ok(!/PRIVATE_(NAME|ID|COOKIE|PASSWORD)_TEST/.test(body),file);}
     const manifest=JSON.parse(fs.readFileSync(path.join(output,'内师大课表.scriptable'),'utf8'));assert.equal(manifest.always_run_in_app,false);assert.equal(manifest.name,'内师大课表');new AsyncFunction(manifest.script);
+    // Exercise the *Python-built artifact* in app mode. Testing the JS template
+    // alone misses Python str.replace changing the quoted runtime marker too.
+    let presented=false,loadedHTML='';
+    const artifactFiles=new Map();
+    const artifactManager={...manager,fileExists:p=>artifactFiles.has(p),createDirectory:p=>artifactFiles.set(p,''),writeString:(p,s)=>artifactFiles.set(p,s),readString:p=>artifactFiles.get(p)};
+    class AppWebView {
+      async loadHTML(html){loadedHTML=html;assert.ok(!html.includes('/* __MOBILE_DATA__ */'),'打包后运行未将课表填入页面');}
+      async present(){presented=true;}
+    }
+    const appSandbox={...sandbox,FileManager:{local:()=>artifactManager,iCloud:()=>({...artifactManager,fileExists:()=>false})},
+      WebView:AppWebView,config:{runsInWidget:false,runsInApp:true},args:{fileURLs:[]},Script:{complete(){}}};
+    await vm.runInNewContext('(async()=>{'+manifest.script+'})()',appSandbox);
+    assert.ok(presented);assert.ok(loadedHTML.includes('const IMNUScheduleCore'));previewHTML=loadedHTML;checks++;console.log('PASS 打包后的手机 App 启动路径');
+    const quotedCache={...cache,courses:[{...cache.courses[0],name:"示例 · Teacher's course $& $` $'"}]};
+    fs.writeFileSync(cachePath,JSON.stringify(quotedCache));
+    const quoteOutput=path.join(temporary,'quoted');
+    const quotedRun=spawnSync('python3',[path.join(__dirname,'export-mobile.py'),'--cache',cachePath,'--output',quoteOutput],{encoding:'utf8'});assert.equal(quotedRun.status,0,quotedRun.stderr);
+    const quoted=JSON.parse(fs.readFileSync(path.join(quoteOutput,'内师大课表.scriptable'),'utf8'));new AsyncFunction(quoted.script);
+    artifactFiles.clear();await vm.runInNewContext('(async()=>{'+quoted.script+'})()',appSandbox);
+    assert.ok(!loadedHTML.includes('/* __MOBILE_DATA__ */'));assert.ok(loadedHTML.includes('示例 · Teacher'));checks++;console.log('PASS 课程名中的引号和替换特殊字符');
+    fs.writeFileSync(cachePath,JSON.stringify(cache));
     const refresh=spawnSync('python3',[path.join(__dirname,'export-mobile.py'),'--cache',cachePath,'--output',output,'--refresh'],{encoding:'utf8'});assert.equal(refresh.status,0,refresh.stderr);
     for(const line of fs.readFileSync(path.join(output,'SHA256SUMS.txt'),'utf8').trim().split('\n')){const [sum,file]=line.split('  ');assert.equal(require('node:crypto').createHash('sha256').update(fs.readFileSync(path.join(output,file))).digest('hex'),sum);}
     const refuse=spawnSync('python3',[path.join(__dirname,'export-mobile.py'),'--generic','--output',output,'--refresh'],{encoding:'utf8'});assert.notEqual(refuse.status,0);
@@ -96,7 +118,7 @@ async function main(){
   }finally{fs.rmSync(temporary,{recursive:true,force:true});}
   if(process.argv.includes('--preview')){
     const output=path.resolve(__dirname,'../release-out/mobile-smoke');fs.mkdirSync(output,{recursive:true});
-    const preview=fs.readFileSync(path.join(__dirname,'panel.html'),'utf8').replace('/* __MOBILE_CORE__ */',fs.readFileSync(path.join(__dirname,'core.js'),'utf8')).replace('/* __MOBILE_DATA__ */',JSON.stringify(demo)).replace('/* __MOBILE_HOST__ */','true').replace('let now = new Date(),','let now = new Date("2026-09-28T09:00:00+08:00"),');
+    const preview=previewHTML.replace('let now = new Date(),','let now = new Date("2026-09-28T09:00:00+08:00"),');
     fs.writeFileSync(path.join(output,'phone.html'),preview);fs.writeFileSync(path.join(output,'fixture.json'),JSON.stringify(demo));
   }
   console.log(checks+' mobile checks passed; synthetic / API simulation only.');

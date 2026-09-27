@@ -22,11 +22,13 @@ python3 Mobile/export-mobile.py \
 
 ```sh
 node Mobile/tests.cjs
-python3 Mobile/export-mobile.py --generic --output release-out/IMNU-iPhone-Widget-1.0.0
+python3 Mobile/export-mobile.py --generic --output release-out/IMNU-iPhone-Widget-1.0.1
 ```
 
 `core.js` 处理 Asia/Shanghai 日期、官网周锚、单双周、课程时间、状态和刷新边界。`widget.js` 仅调用 Scriptable 官方 API，`panel.html` 为离线完整课表。`export-mobile.py` 将其拼成单文件，并生成备用 JS、说明和 SHA256。专用包只能放在忽略的输出目录或仓库外，禁止提交私人课表。
 
-测试覆盖数据逻辑、隐私字段过滤、Scriptable API 调用和各尺寸输出；手机界面可使用合成数据在浏览器检查。以上不是 iPhone 运行验收。主屏幕布局、锁屏显示、文件导入及 AirDrop 接收仍需目标 iPhone 实测。
+测试覆盖数据逻辑、隐私字段过滤、Scriptable API 调用、各尺寸输出以及 Python 实际打包后的打开课表流程；浏览器检查也使用真实打包产物生成的页面和合成数据。在目标 iPhone 上已确认专用包 AirDrop 接收、Scriptable 导入、课表与成绩打开、中号小组件预览。主屏幕安装、锁屏布局与后台刷新仍需分别验证。
+
+1.0.1 修复了专用包导出时误替换页面数据标记的问题。已导入 1.0.0 的用户请导入新的 `.scriptable` 文件。Scriptable 会给同名脚本追加数字；请运行最新导入的脚本，并在“编辑小组件”中重新选择它。
 
 官方参考：[ListWidget 与刷新限制](https://docs.scriptable.app/listwidget/)、[WidgetStack](https://docs.scriptable.app/widgetstack/)、[WebView](https://docs.scriptable.app/webview/)、[Scriptable App Store](https://apps.apple.com/app/scriptable/id1405459188)、[Apple AirDrop](https://support.apple.com/119857)。
