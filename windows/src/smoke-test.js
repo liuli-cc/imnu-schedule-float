@@ -44,6 +44,7 @@ exports.run = async ({app, ballWindow, panelWindow, ensurePortalWindow, smokeOut
     await until(() => panelWindow.isVisible(), 'single-click opening');
     await until(() => inspect(panelWindow, 'document.body.textContent.includes("演示课程 · 数学")'), 'timetable fixture');
     assert.equal(await inspect(panelWindow, 'document.querySelectorAll(".tab").length'), 5);
+    assert.equal(await inspect(panelWindow, 'Array.from(document.querySelectorAll(".tab")).every(button => button.scrollWidth <= button.clientWidth && getComputedStyle(button).whiteSpace === "nowrap")'), true);
     record('one click opens timetable with course times');
     await capture(panelWindow, 'timetable');
     await inspect(panelWindow, 'Array.from(document.querySelectorAll(".tab")).find(button => button.textContent === "成绩查询").click()');
