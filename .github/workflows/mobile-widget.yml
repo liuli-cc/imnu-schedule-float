@@ -1,0 +1,42 @@
+name: Build iPhone widget
+on:
+  push:
+    branches: [main]
+    tags: ['iphone-widget-v*']
+    paths: ['Mobile/**', '.github/workflows/mobile-widget.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  widget:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Check calendar, export privacy, and Scriptable API simulation
+        run: node Mobile/tests.cjs
+      - name: Build public package without a user cache
+        run: |
+          python3 Mobile/export-mobile.py --generic --output release-out/IMNU-iPhone-Widget-1.0.0
+          cd release-out
+          sha256sum IMNU-iPhone-Widget-1.0.0.zip > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: IMNU-iPhone-Widget-1.0.0
+          path: |
+            release-out/IMNU-iPhone-Widget-1.0.0.zip
+            release-out/SHA256SUMS.txt
+      - name: Publish widget download
+        if: startsWith(github.ref, 'refs/tags/iphone-widget-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$GITHUB_REF_NAME" = "iphone-widget-v1.0.0"
+          gh release create "$GITHUB_REF_NAME" --verify-tag --latest=false \
+            --title "教务助手 · iPhone 小组件 1.0.0" \
+            --notes-file Mobile/release-notes.md \
+            release-out/IMNU-iPhone-Widget-1.0.0.zip release-out/SHA256SUMS.txt

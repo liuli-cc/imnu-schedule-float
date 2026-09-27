@@ -7,3 +7,5 @@ windows/.cache/
 *.blockmap
 release-out/
 __pycache__/
+Mobile/out/
+Mobile/private/
