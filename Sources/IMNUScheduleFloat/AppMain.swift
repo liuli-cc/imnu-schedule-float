@@ -9,6 +9,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     private var floatingController: FloatingPanelController?
     private var statusItem: NSStatusItem?
     private var wakeObserver: NSObjectProtocol?
+    private var loginItemMenuItem: NSMenuItem?
 
     static func main() {
         let app = NSApplication.shared
@@ -19,9 +20,17 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // A login launch and a Finder launch may arrive together. Keep one ball.
+        if let bundleID = Bundle.main.bundleIdentifier,
+           NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+            .contains(where: { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier
+                && $0.launchDate.map { $0 < (NSRunningApplication.current.launchDate ?? .now) } == true }) {
+            NSApp.terminate(nil)
+            return
+        }
         webSession.attach(scheduleStore: store)
         webSession.onNetworkRestored = { [weak self] in
-            self?.webSession.openPortal()
+            Task { @MainActor [weak self] in await self?.webSession.resume() }
         }
         let controller = FloatingPanelController(
             store: store,
@@ -33,23 +42,26 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         floatingController = controller
         controller.start()
         installStatusItem()
+        store.startLocalClock()
         store.startAutomaticRefresh(with: webSession)
         installWakeRefresh()
         Task { [weak self] in
             guard let self else { return }
             await self.webSession.restorePersistedCookies()
             self.webSession.openPortal()
-            if case .sample = self.store.syncState {
-                // A first-time user should see the official QR page right
-                // away, rather than needing to discover the small floating
-                // control before authorization can begin.
-                self.showAuthorization()
-            }
+            // The ball is available immediately; restore the official session
+            // quietly without opening an authorization window at every login.
         }
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        floatingController?.showSchedule()
+        return false
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         store.stopAutomaticRefresh()
+        store.stopLocalClock()
         floatingController?.stop()
         if let wakeObserver { NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver) }
     }
@@ -81,6 +93,9 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "首次授权或重新登录", action: #selector(authorizeMenuItem), keyEquivalent: "l")
         menu.addItem(withTitle: "打开教务系统首页", action: #selector(portalHomeMenuItem), keyEquivalent: "i")
         menu.addItem(.separator())
+        let loginItem = menu.addItem(withTitle: "登录后自动显示悬浮球", action: #selector(toggleLoginItem), keyEquivalent: "")
+        loginItem.state = LoginItemController.isEnabled ? .on : .off
+        loginItemMenuItem = loginItem
         menu.addItem(withTitle: "退出教务悬浮助手", action: #selector(quit), keyEquivalent: "q")
         for item in menu.items { item.target = self }
         item.menu = menu
@@ -95,8 +110,20 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                await self.store.sync(using: self.webSession)
+                await self.webSession.resume()
             }
+        }
+    }
+
+    @objc private func toggleLoginItem() {
+        do {
+            try LoginItemController.setEnabled(!LoginItemController.isEnabled)
+            loginItemMenuItem?.state = LoginItemController.isEnabled ? .on : .off
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "未能更改自动启动"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
         }
     }
 

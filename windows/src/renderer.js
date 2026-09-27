@@ -9,6 +9,7 @@ let appState = {
 let selectedView = 'today';
 let selectedWeek = 1;
 let selectedGradeTerm = 'all';
+let renderedLocalDateKey = '';
 const CLASS_TIME_BLOCKS = [
   { startSection: 1, endSection: 2, start: '08:20', end: '10:00' },
   { startSection: 3, endSection: 4, start: '10:20', end: '12:00' },
@@ -38,7 +39,7 @@ function renderBall(ballMode = 'ball') {
   control.setAttribute('aria-label', ballMode === 'handle' ? '显示教务悬浮球' : `教务悬浮助手，${appState.message}`);
   if (ballMode === 'handle') {
     control.addEventListener('mouseenter', () => window.assistantAPI.revealBall());
-    control.addEventListener('click', () => window.assistantAPI.revealBall());
+    control.addEventListener('click', () => window.assistantAPI.activateBall());
   } else {
     control.append(iconCalendar());
     control.append(element('span', `status-dot status-${appState.syncStatus}`));
@@ -59,9 +60,9 @@ function renderBall(ballMode = 'ball') {
       if (!start) return;
       control.releasePointerCapture(event.pointerId);
       window.assistantAPI.dragEnd();
-      if (!dragged) window.assistantAPI.activateBall();
       start = null;
     });
+    control.addEventListener('click', () => { if (!dragged) window.assistantAPI.activateBall(); });
     control.addEventListener('pointercancel', () => { start = null; window.assistantAPI.dragEnd(); });
   }
   appRoot.append(control);
@@ -83,9 +84,32 @@ function coursesForWeek(week) {
   return appState.courses.filter(course => !Array.isArray(course.activeWeeks) || course.activeWeeks.length === 0 || course.activeWeeks.includes(week));
 }
 
-function currentWeekday() {
-  const day = new Date().getDay();
+function currentWeekday(date = new Date()) {
+  const day = date.getDay();
   return day === 0 ? 7 : day;
+}
+
+function tomorrowDate(reference = new Date()) {
+  const tomorrow = new Date(reference);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return tomorrow;
+}
+
+function coursesForDate(date) {
+  if (!appState.currentWeek) return [];
+  const targetWeek = currentWeekday() === 7 && currentWeekday(date) === 1
+    ? appState.currentWeek + 1
+    : appState.currentWeek;
+  if (targetWeek > (appState.maxWeek || 19)) return [];
+  return coursesForWeek(targetWeek)
+    .filter(course => course.weekday === currentWeekday(date))
+    .sort((a, b) => a.startSection - b.startSection);
+}
+
+function localDateKey(date = new Date()) {
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric', month: 'numeric', day: 'numeric', timeZoneName: 'long'
+  }).format(date);
 }
 
 function classTimeText(course) {
@@ -142,11 +166,19 @@ function renderViewContent(container) {
   if (selectedView === 'today') {
     const formatter = new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', weekday: 'long' });
     container.append(element('h2', 'list-title', `今天 · ${formatter.format(new Date())}`));
-    const todayCourses = coursesForWeek(appState.currentWeek)
-      .filter(course => course.weekday === currentWeekday())
-      .sort((a, b) => a.startSection - b.startSection);
-    if (!todayCourses.length) container.append(emptyState('今天没有课程', '可切换到“本学期”并选择教学周。'));
+    const todayCourses = coursesForDate(new Date());
+    if (!todayCourses.length) container.append(emptyState('今天没有课程', '日期和星期使用本机时间；课表需要已缓存的教学周。'));
     else todayCourses.forEach(course => container.append(courseCard(course)));
+    return;
+  }
+
+  if (selectedView === 'tomorrow') {
+    const tomorrow = tomorrowDate();
+    const formatter = new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', weekday: 'long' });
+    container.append(element('h2', 'list-title', `明天 · ${formatter.format(tomorrow)}`));
+    const tomorrowCourses = coursesForDate(tomorrow);
+    if (!tomorrowCourses.length) container.append(emptyState('明天没有课程', '日期和星期使用本机时间；课表需要已缓存的教学周。'));
+    else tomorrowCourses.forEach(course => container.append(courseCard(course)));
     return;
   }
 
@@ -258,6 +290,7 @@ function renderGrades(container) {
 
 function renderPanel() {
   document.body.className = 'panel-page';
+  renderedLocalDateKey = localDateKey();
   appRoot.replaceChildren();
   const panel = element('section', 'schedule-panel');
 
@@ -267,7 +300,9 @@ function renderPanel() {
   header.append(brand);
   const title = element('div', 'title-block');
   title.append(element('h1', null, '教务悬浮助手'));
-  title.append(element('p', `sync-label sync-${appState.syncStatus}`, appState.message));
+  const syncLabel = element('p', `sync-label sync-${appState.syncStatus}`, appState.message);
+  syncLabel.title = (appState.syncWarnings || []).join('；') || appState.message;
+  title.append(syncLabel);
   header.append(title);
   if (appState.profile?.name || appState.profile?.studentNumber) {
     const profile = element('button', 'profile profile-button');
@@ -286,7 +321,7 @@ function renderPanel() {
   panel.append(header);
 
   const tabs = element('nav', 'tabs');
-  tabs.append(tabButton('今天', 'today'), tabButton('本周', 'week'), tabButton('本学期', 'semester'), tabButton('成绩查询', 'grades'));
+  tabs.append(tabButton('今天', 'today'), tabButton('明天', 'tomorrow'), tabButton('本周', 'week'), tabButton('本学期', 'semester'), tabButton('成绩查询', 'grades'));
   panel.append(tabs);
 
   const content = element('div', 'panel-content');
@@ -323,3 +358,21 @@ window.assistantAPI.onState(value => {
 });
 
 if (mode === 'ball') window.assistantAPI.onBallMode(value => renderBall(value));
+if (mode === 'panel') window.assistantAPI.onPanelOpen(() => {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  document.querySelector('.schedule-panel')?.animate([
+    {transform:'translateY(8px) scale(.94)', opacity:.4, offset:0},
+    {transform:'translateY(-2px) scale(1.018)', opacity:1, offset:.65},
+    {transform:'translateY(1px) scale(.996)', offset:.85},
+    {transform:'translateY(0) scale(1)', offset:1}
+  ], {duration:360, easing:'cubic-bezier(.2,.7,.2,1)'});
+});
+
+// The portal is only needed for timetable and grade refresh. Keep the
+// calendar header alive from the local clock, including across midnight while
+// the app remains open and completely offline.
+setInterval(() => {
+  if (mode === 'panel' && ['today', 'tomorrow'].includes(selectedView) && localDateKey() !== renderedLocalDateKey) {
+    renderPanel();
+  }
+}, 30_000);

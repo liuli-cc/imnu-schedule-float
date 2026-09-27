@@ -1,32 +1,66 @@
 # 教务悬浮助手
 
-macOS 与 Windows 本地课表悬浮球。macOS 版包含今日、本周、本学期按周查看，全部成绩与绩点按学期查看，学生姓名/学号官网首页快捷入口，本地离线缓存、内嵌微信扫码授权及自动刷新。
+以内蒙古师范大学课表为主的桌面悬浮球。点击一次即可查看今天、明天、本周、本学期的课程和上课时间，也可查询全部学期成绩、学分、绩点，并从个人信息入口打开教务官网。
 
-## 运行
+当前版本 **1.1.0**。保留悬浮球、靠边隐藏、灰紫色透明面板与弹性展开；macOS 使用原生毛玻璃，Windows 11 22H2 及以上使用系统 Acrylic，较早的 Windows 使用半透明面板。
 
-```zsh
-cd '/Users/liuli/内蒙古师范大学/教务悬浮助手'
+## 选择你的版本
+
+无需安装开发工具。Windows 免安装包解压后运行 `IMNUScheduleFloat.exe`；Mac 解压后打开应用，或运行包内的安装脚本。
+
+| 电脑 | 推荐下载 | 免安装 / 便携包 |
+| --- | --- | --- |
+| Mac · Apple M 系列 | [macOS Apple 芯片版 ZIP](https://github.com/liuli-cc/imnu-schedule-float/releases/download/v1.1.0/IMNU-Schedule-Float-macOS-arm64-1.1.0.zip) | 同左 |
+| Mac · Intel | [macOS Intel 版 ZIP](https://github.com/liuli-cc/imnu-schedule-float/releases/download/v1.1.0/IMNU-Schedule-Float-macOS-x86_64-1.1.0.zip) | 同左 |
+| Windows · Intel / AMD | [Windows x64 安装版](https://github.com/liuli-cc/imnu-schedule-float/releases/download/v1.1.0/IMNU-Schedule-Float-Windows-x64-1.1.0-Setup.exe) | [Windows x64 ZIP](https://github.com/liuli-cc/imnu-schedule-float/releases/download/v1.1.0/IMNU-Schedule-Float-Windows-x64-1.1.0.zip) |
+| Windows · ARM / Snapdragon | [Windows ARM64 安装版](https://github.com/liuli-cc/imnu-schedule-float/releases/download/v1.1.0/IMNU-Schedule-Float-Windows-arm64-1.1.0-Setup.exe) | [Windows ARM64 ZIP](https://github.com/liuli-cc/imnu-schedule-float/releases/download/v1.1.0/IMNU-Schedule-Float-Windows-arm64-1.1.0.zip) |
+
+[全部下载和更新说明](https://github.com/liuli-cc/imnu-schedule-float/releases/latest) · [SHA256 校验文件](https://github.com/liuli-cc/imnu-schedule-float/releases/download/v1.1.0/SHA256SUMS.txt)
+
+系统要求：macOS 14 及以上；Windows 10 / 11。Mac 可在“关于本机”查看芯片；Windows 在“设置 → 系统 → 系统信息”查看系统类型。Windows ARM64 包已检查架构，尚未经过 ARM 实机交互验收。
+
+## 安装与使用
+
+Mac 解压后先打开“教务悬浮助手.app”。运行“安装.command”可安装并启用登录后自动显示悬浮球；已有 `/Applications` 安装会原位更新，否则安装到当前用户的 Applications 文件夹。也可自己移动应用，然后在菜单栏勾选“登录后自动显示悬浮球”。不用管理员密码或 Python / Homebrew。
+
+Windows 安装程序可选择目录。首次运行会显示悬浮球并启用登录后启动，右键托盘图标可关闭自动启动；免安装版请放在固定文件夹，避免开机启动路径失效。更新安装保留本机课表与官网会话，卸载安装版会移除自动启动项。
+
+首次使用点击“授权登录”，在学校官方页面完成登录。随后点击悬浮球即可展开课表；拖到屏幕边缘可以收起，点击边缘入口一次即可展开。应用在后台每 45 分钟尝试同步，也会在网络恢复或电脑唤醒后刷新。
+
+应用尚未购买 Apple 公证和 Windows 发布者证书。首次下载可能出现系统的开发者确认：Mac 可依照“系统设置 → 隐私与安全性”的提示允许打开；Windows 可在确认本仓库下载来源后按系统提示打开。无需关闭系统安全功能。
+
+## 登录信息与离线缓存
+
+- 复用学校官网的登录会话，不保存明文教务密码，也不收集扫码凭据。官方会话未失效时，关闭或重启后可继续使用；学校使会话过期后仍需重新授权。
+- Mac 使用 WebKit 持久会话，并在系统允许时把会话备份到钥匙串。后台读取不会主动弹出钥匙串密码框；“允许钥匙串保存登录”是用户主动操作。若 macOS 询问“登录钥匙串”密码，通常是 Mac 登录/解锁密码。
+- Windows 使用独立的持久浏览器会话。课表、成绩和个人信息保存在当前用户的本机应用数据目录，请保护好自己的系统账户。
+- 断网保留已有课表和成绩。部分附加接口失败时保留对应缓存；官方空课表正常显示。教学周来自官网，跨周时按本地日期推进，不从首次打开日期猜测教学周。
+- Github 源码和安装包不包含任何用户的账号、登录状态或私人课表。本应用是独立工具，并非学校官方客户端。
+
+## 开发与发布
+
+Mac 需要 Swift 6 / Xcode 16 或更新版本；Windows 需要 Node.js 22。
+
+```sh
+# macOS：编译当前电脑版本
 ./build.sh
-open 'dist/教务悬浮助手.app'
+# 数据与会话回归检查，使用隔离的合成数据
+./Tests/run-data-regressions.sh
+# 任一 Mac 架构的可分发 ZIP
+bash Release/build-macos.sh arm64
+bash Release/build-macos.sh x86_64
+# 修改原生网页解析器后同步 Windows 版本
+python3 Release/sync-portal-parser.py
 ```
 
-## 首次授权
+```sh
+cd windows
+npm ci
+npm test
+npm run build -- --x64
+npm run build -- --arm64
+```
 
-1. 点击悬浮球中的“授权登录”。
-2. 使用微信扫描内嵌教务页面的二维码。
-3. 登录成功后，程序直接读取官网固定的“学生课表查询”接口，一次获取整学期排课并缓存；无需等待首页计算教学周，也无需粘贴接口链接。
-4. 后续启动会恢复本机的教务会话，程序每 45 分钟、电脑唤醒后自动刷新一次。断网时不会清除授权或课表，会直接显示已缓存课表；网络恢复后会自动重连并同步。
+GitHub Actions 自动构建四种架构、六个下载包。Mac 的回归检查覆盖缓存、教学周、部分同步和钥匙串异步行为；Windows x64 启动打包后的真实 EXE，用隔离的演示数据验证悬浮球点击、课表、成绩、边缘展开与个人信息入口。校验全部产物后生成 SHA256SUMS 并发布 Release。合成检查不代表学校真实账号登录或同步验收。
 
-“本学期”可选择第 1-19 周。“成绩查询”会以“入学以来 - 至今”范围同步官网的主修、辅修和微专业成绩，默认显示全部学期，也可从学期子菜单单独选择最近或历史学期，所有成绩均会离线缓存。点击右上角姓名学号可直接打开已授权的教务系统首页。
-
-悬浮球进入屏幕左右边缘后会收成可点击窄条；唤出后若没有移动或打开窗口，1 秒后会自动缩回。打开窗口后可拖动顶部中央的小横条，窗口和悬浮球会一起移动并保存新位置。点击、悬停、周次选择和内容切换均带有轻量反馈，并遵循 macOS 的“减少动态效果”设置。
-
-每节课程的节次下方会显示对应上课时间：第 1–2 节 08:20–10:00，第 3–4 节 10:20–12:00，第 5–6 节 14:00–15:40，第 7–8 节 16:00–17:40，第 9–10 节 19:00–20:40。
-
-会话 Cookie 仅保存在本机应用数据目录，文件权限为当前用户可读写；教务服务器主动使会话失效、修改接口或要求二次验证时，仍需要在该官方页面重新扫码一次。
-
-## Windows 版
-
-Windows 10/11 x64 用户可直接运行 `windows/dist/教务悬浮助手-Windows-1.0.4-x64-安装包.exe`。安装版自带运行环境，不需要安装 Python、Node.js 或其他依赖。首次启动完成统一身份认证后，登录会话保存在当前 Windows 用户目录，后续启动会自动恢复并同步课表、全部学期成绩和绩点；断网时会保留登录会话和已缓存的课表、成绩。Windows 版也支持“成绩查询”的全部学期与学期子菜单筛选。
-
-Windows 安装包在 macOS 上交叉构建，已完成 PE/NSIS 格式、应用资源和本机 Electron 启动检查；真实 Windows 安装、系统托盘、跨屏拖拽和开机环境尚需在 Windows 10/11 x64 设备上验收。安装包没有商业代码签名证书，Windows SmartScreen 可能显示“未知发布者”。
+维护者先更新 `VERSION`、Mac Info.plist 与 Windows package.json，再运行 `Build and release IMNU Schedule Float` 工作流并选中 publish，或推送对应 `v*` 标签。发布会绑定实际检查过的提交。

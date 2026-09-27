@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('assistantAPI', {
   getState: () => ipcRenderer.invoke('state:get'),
   onState: (callback) => ipcRenderer.on('state:update', (_event, value) => callback(value)),
   onBallMode: (callback) => ipcRenderer.on('ball:mode', (_event, value) => callback(value)),
+  onPanelOpen: (callback) => ipcRenderer.on('panel:opened', () => callback()),
   dragStart: (x, y) => ipcRenderer.send('ball:drag-start', { x, y }),
   dragMove: (x, y) => ipcRenderer.send('ball:drag-move', { x, y }),
   dragEnd: () => ipcRenderer.send('ball:drag-end'),

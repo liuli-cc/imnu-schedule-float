@@ -1,23 +1,25 @@
 {
   "name": "imnu-schedule-float-win",
-  "version": "1.0.4",
+  "version": "1.1.0",
   "description": "内蒙古师范大学教务课表悬浮助手 Windows 版",
   "main": "src/main.js",
   "author": "liuli",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "build:win": "electron-builder --win nsis --x64",
+    "test": "node ../Tests/PortalSnapshotRegression.cjs && node ../Tests/WindowsDataRegression.cjs",
+    "build": "electron-builder --win nsis zip",
+    "build:win": "electron-builder --win nsis zip --x64",
     "pack:win": "electron-builder --win dir --x64"
   },
   "devDependencies": {
-    "electron": "^37.2.6",
-    "electron-builder": "^26.0.12"
+    "electron": "44.4.5",
+    "electron-builder": "26.15.3"
   },
   "build": {
     "appId": "cn.liuli.imnu-schedule-float",
     "productName": "教务悬浮助手",
-    "artifactName": "教务悬浮助手-Windows-${version}-x64-安装包.${ext}",
+    "artifactName": "IMNU-Schedule-Float-Windows-${arch}-${version}.${ext}",
     "directories": {
       "output": "dist",
       "buildResources": "assets"
@@ -31,10 +33,20 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ],
-      "icon": "assets/icon.png"
+      "icon": "assets/icon.ico"
     },
     "nsis": {
       "oneClick": false,
@@ -42,10 +54,26 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "教务悬浮助手",
-      "installerLanguages": ["zh_CN"],
+      "installerLanguages": [
+        "zh_CN"
+      ],
       "language": "2052",
       "runAfterFinish": true,
-      "deleteAppDataOnUninstall": false
-    }
-  }
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "IMNU-Schedule-Float-Windows-${arch}-${version}-Setup.${ext}",
+      "include": "assets/installer.nsh"
+    },
+    "executableName": "IMNUScheduleFloat",
+    "extraFiles": [
+      {
+        "from": "../LICENSE",
+        "to": "LICENSE.txt"
+      },
+      {
+        "from": "Windows使用说明.md",
+        "to": "使用说明.md"
+      }
+    ]
+  },
+  "private": true
 }

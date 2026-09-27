@@ -1,6 +1,14 @@
 const { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage, powerMonitor, screen } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
+
+const smokeTest = process.argv.includes('--smoke-test');
+const smokeOutput = process.env.IMNU_SMOKE_OUTPUT || path.join(os.tmpdir(), 'imnu-smoke-' + process.pid);
+if (smokeTest) {
+  fs.mkdirSync(smokeOutput, { recursive: true });
+  app.setPath('userData', path.join(smokeOutput, 'isolated-user-data'));
+}
 
 const PORTAL_URL = 'https://jwxt.imnu.edu.cn';
 const REFRESH_INTERVAL = 45 * 60 * 1000;
@@ -15,6 +23,8 @@ let panelWindow;
 let portalWindow;
 let tray;
 let refreshTimer;
+let clockTimer;
+let cacheGeneration = 0;
 let syncInProgress = false;
 let networkOnline = true;
 let dragOrigin = null;
@@ -32,111 +42,8 @@ let state = {
   updatedAt: null
 };
 
-const SNAPSHOT_SCRIPT = `
-(async () => {
-  const text = value => {
-    if (value == null) return '';
-    if (Array.isArray(value)) return value.map(text).filter(Boolean).join('、');
-    if (typeof value === 'object') return text(value.xm || value.name || value.jsmc || value.tmc || '');
-    const output = String(value).trim();
-    return output === '-' ? '' : output;
-  };
-  const plain = value => {
-    const raw = text(value);
-    if (!raw.includes('<') && !raw.includes('&lt;')) return raw;
-    const holder = document.createElement('div');
-    holder.innerHTML = raw;
-    return (holder.textContent || '').replace(/\\s+/g, ' ').trim();
-  };
-  const weekday = value => {
-    const raw = text(value);
-    const names = {'星期一':1,'星期二':2,'星期三':3,'星期四':4,'星期五':5,'星期六':6,'星期日':7,'周一':1,'周二':2,'周三':3,'周四':4,'周五':5,'周六':6,'周日':7};
-    return names[raw] || Number.parseInt(raw, 10) || 0;
-  };
-  const pageResponse = await fetch('/admin/xsd/pkgl/xskb/queryKbForXsd', {credentials:'include'});
-  if (!pageResponse.ok || /\\/login|caslogin/.test(pageResponse.url)) throw new Error('AUTH_REQUIRED');
-  const pageHTML = await pageResponse.text();
-  const page = new DOMParser().parseFromString(pageHTML, 'text/html');
-  const field = id => page.querySelector('#' + id)?.getAttribute('value') || page.querySelector('#' + id)?.textContent?.trim() || '';
-  const term = field('xnxq');
-  const xhid = field('xhid');
-  const campus = field('xqdm');
-  if (!term) throw new Error('AUTH_REQUIRED');
-
-  const form = new URLSearchParams({xnxq:term, xhid, xqdm:campus, zdzc:'', zxzc:'', xskbxslx:'0'});
-  const gradeCategories = [
-    {value:'0', label:'主修'},
-    {value:'1', label:'辅修'},
-    {value:'9', label:'微专业'}
-  ];
-  const gradeRequests = gradeCategories.map(item => fetch(
-    '/admin/xsd/xsdcjcx/xsdQueryXscjList?fxbz=' + item.value + '&gridtype=jqgrid&_search=false&page.size=500&page.pn=1&sort=xnxq&order=desc&startXnxq=001&endXnxq=001',
-    {credentials:'include', headers:{'X-Requested-With':'XMLHttpRequest', 'Accept':'application/json, text/javascript, */*; q=0.01'}}
-  ));
-  const [courseResponse, profileResponse, gpaResponse, weeksResponse, currentWeekResponse, ...gradeResponses] = await Promise.all([
-    fetch('/admin/xsd/pkgl/xskb/sdpkkbList', {method:'POST', credentials:'include', headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'}, body:form}),
-    fetch('/admin/xsd/xskp/xskp?xhid=' + encodeURIComponent(xhid), {credentials:'include'}),
-    fetch('/admin/xsd/xsdzgcjcx/getXspjxfjd', {credentials:'include'}),
-    fetch('/admin/getCurrentPkZc', {credentials:'include'}),
-    fetch('/admin/api/getXlzc', {credentials:'include'}),
-    ...gradeRequests
-  ]);
-  if (!courseResponse.ok) throw new Error('COURSE_HTTP_' + courseResponse.status);
-  const [courseJSON, profileJSON, gpaJSON, weeksJSON, currentWeekJSON] = await Promise.all([
-    courseResponse.json(), profileResponse.json().catch(() => ({})), gpaResponse.json().catch(() => ({})),
-    weeksResponse.json().catch(() => ({})), currentWeekResponse.json().catch(() => ({}))
-  ]);
-  if (courseJSON.ret !== 0) throw new Error(courseJSON.msg || 'COURSE_RESPONSE');
-  const rawProfile = profileJSON?.data || {};
-  const identityRow = Array.from(document.querySelectorAll('.header_left li')).find(node => /姓名\\s*\\/\\s*学号/.test(node.textContent || ''));
-  const identity = text(identityRow?.querySelector('.value')?.textContent).split('/');
-  const rawCourses = Array.isArray(courseJSON.data) ? courseJSON.data : [];
-  const courses = rawCourses.map(item => {
-    const building = plain(item.jxlmc);
-    const room = plain(item.croommc || item.croombh);
-    return {
-      name: plain(item.kcmc),
-      teacher: plain(item.tmc || item.jsmc || item.teacher || item.jsxq),
-      location: [...new Set([building, room].filter(Boolean))].join(' · '),
-      weekday: weekday(item.xingqi || item.xq),
-      section: text(item.djc || item.djs || item.jc),
-      weeks: text(item.zcstr || item.zc)
-    };
-  }).filter(item => item.name && item.weekday > 0);
-  const gradeJSONs = await Promise.all(gradeResponses.map(response => response.json().catch(() => ({}))));
-  const successfulGradeResponses = gradeJSONs
-    .map((payload, categoryIndex) => ({payload, categoryIndex}))
-    .filter(item => item.payload && item.payload.ret === 0);
-  const grades = successfulGradeResponses.length ? successfulGradeResponses.flatMap(({payload, categoryIndex}) => {
-    const category = gradeCategories[categoryIndex]?.label || '主修';
-    const records = Array.isArray(payload.results) ? payload.results : [];
-    return records.map((item, index) => ({
-      id: text(item.id) || [text(item.xnxq), text(item.kcbh), category, index].join('|'),
-      term: text(item.xnxq),
-      courseName: plain(item.kcmc).replace(/^\[[^\]]+\]\s*/, ''),
-      score: text(item.zhcj || item.yscj),
-      credit: text(item.xf),
-      gradePoint: text(item.jd),
-      courseNature: text(item.kcxzmc || item.kcxz),
-      examType: text(item.ksxs),
-      category
-    })).filter(item => item.courseName);
-  }) : null;
-  const allWeeks = Array.isArray(weeksJSON.data) ? weeksJSON.data.map(Number).filter(Number.isFinite) : [];
-  const currentWeek = Number(currentWeekJSON?.data?.xlzc || currentWeekJSON?.data?.zc || 0) || null;
-  return JSON.stringify({
-    term,
-    maxWeek: allWeeks.length ? Math.max(...allWeeks) : 19,
-    currentWeek,
-    profile: {
-      studentNumber: text(rawProfile.xh) || text(identity[1]),
-      name: text(rawProfile.xm) || text(identity[0]),
-      gpa: text(gpaJSON?.data) || text(document.querySelector('#pjxfjd')?.textContent)
-    },
-    courses,
-    grades
-  });
-})().catch(error => JSON.stringify({__error:String(error?.message || error)}));`;
+const SNAPSHOT_SCRIPT = require('./portal-snapshot');
+const { teachingWeek, weekNumbers, mergeSnapshot } = require('./schedule-data');
 
 function dataPath(name) {
   return path.join(app.getPath('userData'), name);
@@ -153,15 +60,19 @@ function writeJSON(file, value) {
   fs.renameSync(temporary, file);
 }
 
+
 function loadLocalState() {
   settings = readJSON(dataPath('settings.json'), {});
   const cached = readJSON(dataPath('schedule-cache.json'), null);
-  if (!cached || !Array.isArray(cached.courses) || cached.courses.length === 0) return;
+  if (!cached || !Array.isArray(cached.courses)) return;
   state = {
     ...state,
     ...cached,
+    currentWeek: teachingWeek(cached),
+    weekAnchor: cached.weekAnchor ?? cached.currentWeek,
+    currentWeekAnchorDate: cached.currentWeekAnchorDate || cached.updatedAt,
     syncStatus: 'ready',
-    message: '已同步',
+    message: '已缓存，正在连接教务系统',
     profile: { name: '', studentNumber: '', gpa: '', ...(cached.profile || {}) }
   };
 }
@@ -191,23 +102,6 @@ function sectionRange(rawValue) {
   return [1, 2];
 }
 
-function weekNumbers(rawValue) {
-  const text = String(rawValue || '').replaceAll('，', ',');
-  const odd = text.includes('单');
-  const even = text.includes('双');
-  const output = new Set();
-  for (const part of text.split(',')) {
-    const values = part.split(/[^0-9]+/).filter(Boolean).map(Number);
-    if (values.length >= 2) {
-      const lower = Math.min(values[0], values[1]);
-      const upper = Math.max(values[0], values[1]);
-      for (let week = lower; week <= upper; week += 1) {
-        if ((!odd || week % 2 === 1) && (!even || week % 2 === 0)) output.add(week);
-      }
-    } else if (values.length === 1) output.add(values[0]);
-  }
-  return output.size ? [...output].sort((a, b) => a - b) : null;
-}
 
 function normalizeCourses(rows) {
   const parsed = rows.map((payload, index) => {
@@ -266,7 +160,7 @@ function isNetworkError(error) {
   const message = String(error?.message || error || '').toLowerCase();
   return [
     'err_internet_disconnected', 'err_network_changed', 'err_name_not_resolved',
-    'err_connection', 'err_timed_out', 'failed to fetch', 'network error',
+    'err_connection', 'err_timed_out', 'network_timed_out', 'failed to fetch', 'network error',
     'networkerror', 'offline', 'internet connection', 'could not connect'
   ].some(fragment => message.includes(fragment));
 }
@@ -291,13 +185,13 @@ async function syncSchedule({ showLogin = false } = {}) {
     markOffline();
     return;
   }
-  ensurePortalWindow(showLogin);
+  ensurePortalWindow(false);
   const currentURL = portalWindow.webContents.getURL();
   if (!isPortalHome(currentURL)) {
+    if (showLogin) { portalWindow.show(); portalWindow.focus(); }
     if (isAuthenticationPage(currentURL)) {
       setStatus('needsAuthorization', '登录已失效，请重新授权');
-      portalWindow.show();
-      portalWindow.focus();
+      if (showLogin) { portalWindow.show(); portalWindow.focus(); }
     } else {
       setStatus('syncing', '正在连接教务系统');
       if (!portalWindow.webContents.isLoading()) {
@@ -311,6 +205,7 @@ async function syncSchedule({ showLogin = false } = {}) {
   }
 
   syncInProgress = true;
+  const generation = cacheGeneration;
   setStatus('syncing', '正在读取课表和全部成绩');
   try {
     const result = await portalWindow.webContents.executeJavaScript(SNAPSHOT_SCRIPT, true);
@@ -320,26 +215,17 @@ async function syncSchedule({ showLogin = false } = {}) {
       throw new Error(snapshot.__error);
     }
     const courses = normalizeCourses(snapshot.courses || []);
-    if (!courses.length) throw new Error('没有识别到课程数据');
-    state = {
-      syncStatus: 'ready',
-      message: '已同步',
-      courses,
-      profile: { name: '', studentNumber: '', gpa: '', ...(snapshot.profile || {}) },
-      grades: Array.isArray(snapshot.grades) ? snapshot.grades : state.grades,
-      gradesUpdatedAt: Array.isArray(snapshot.grades) ? new Date().toISOString() : state.gradesUpdatedAt,
-      term: snapshot.term || '',
-      maxWeek: Math.max(Number(snapshot.maxWeek) || 19, 1),
-      currentWeek: Number(snapshot.currentWeek) || null,
-      updatedAt: new Date().toISOString()
-    };
+    if (!Array.isArray(snapshot.courses) || (snapshot.courses.length && !courses.length)) throw new Error('没有识别到课程数据');
+    if (generation !== cacheGeneration) return;
+    state = mergeSnapshot(state, snapshot, courses);
     writeJSON(dataPath('schedule-cache.json'), state);
     broadcastState();
     if (portalWindow.isVisible()) portalWindow.hide();
   } catch (error) {
+    if (generation !== cacheGeneration) return;
     if (String(error.message).includes('AUTH_REQUIRED')) {
       setStatus('needsAuthorization', '登录已失效，请重新授权');
-      portalWindow.show();
+      if (showLogin) portalWindow.show();
     } else if (isNetworkError(error)) {
       networkOnline = false;
       markOffline();
@@ -362,19 +248,23 @@ function createLocalWindow(options, mode) {
     }
   });
   window.loadFile(path.join(__dirname, 'index.html'), { query: { mode } });
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  window.webContents.on('will-navigate', event => event.preventDefault());
   window.setMenuBarVisibility(false);
   return window;
 }
 
 function createBallWindow() {
   const display = screen.getPrimaryDisplay().workArea;
-  const initialX = Number.isFinite(settings.ballX) ? settings.ballX : display.x + display.width - BALL_SIZE - 22;
-  const initialY = Number.isFinite(settings.ballY) ? settings.ballY : display.y + Math.round((display.height - BALL_SIZE) / 2);
+  const saved = {x: settings.ballX || display.x, y: settings.ballY || display.y, width: BALL_SIZE, height: BALL_SIZE};
+  const work = screen.getDisplayMatching(saved).workArea;
+  const initialX = Math.max(work.x + 6, Math.min(Number.isFinite(settings.ballX) ? settings.ballX : work.x + work.width - BALL_SIZE - 22, work.x + work.width - BALL_SIZE - 6));
+  const initialY = Math.max(work.y + 6, Math.min(Number.isFinite(settings.ballY) ? settings.ballY : work.y + (work.height - BALL_SIZE) / 2, work.y + work.height - BALL_SIZE - 6));
   ballWindow = createLocalWindow({
     width: BALL_SIZE,
     height: BALL_SIZE,
     x: initialX,
-    y: initialY,
+    y: Math.round(initialY),
     frame: false,
     transparent: true,
     resizable: false,
@@ -397,11 +287,13 @@ function createBallWindow() {
 }
 
 function createPanelWindow() {
+  const acrylic = process.platform === 'win32' && Number(os.release().split('.')[2]) >= 22621;
   panelWindow = createLocalWindow({
     width: PANEL_WIDTH,
     height: PANEL_HEIGHT,
     frame: false,
-    transparent: true,
+    transparent: !acrylic,
+    ...(acrylic ? {backgroundMaterial: 'acrylic'} : {}),
     resizable: false,
     alwaysOnTop: true,
     skipTaskbar: true,
@@ -411,7 +303,7 @@ function createPanelWindow() {
   }, 'panel');
   panelWindow.setAlwaysOnTop(true, 'floating');
   panelWindow.setVisibleOnAllWorkspaces(true);
-  panelWindow.on('blur', () => panelWindow.hide());
+  panelWindow.on('blur', () => { if (!smokeTest) panelWindow.hide(); });
   panelWindow.on('close', event => {
     if (!app.isQuitting) { event.preventDefault(); panelWindow.hide(); }
   });
@@ -439,13 +331,11 @@ function ensurePortalWindow(show = false) {
   });
   portalWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   portalWindow.webContents.on('did-finish-load', () => {
+    if (smokeTest) return;
     const currentURL = portalWindow.webContents.getURL();
     networkOnline = true;
     if (isPortalHome(currentURL)) syncSchedule();
-    else if (isAuthenticationPage(currentURL)) {
-      setStatus('needsAuthorization', '登录已失效，请重新授权');
-      portalWindow.show();
-    } else if (state.courses.length === 0) portalWindow.show();
+    else if (isAuthenticationPage(currentURL)) setStatus('needsAuthorization', '登录已失效，请重新授权');
   });
   portalWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, _validatedURL, isMainFrame) => {
     if (!isMainFrame || errorCode === -3) return;
@@ -459,12 +349,13 @@ function ensurePortalWindow(show = false) {
   portalWindow.on('close', event => {
     if (!app.isQuitting) { event.preventDefault(); portalWindow.hide(); }
   });
-  portalWindow.loadURL(PORTAL_URL);
+  portalWindow.loadURL(smokeTest ? 'about:blank' : PORTAL_URL);
   return portalWindow;
 }
 
 function openPortalHome() {
   const window = ensurePortalWindow(true);
+  if (smokeTest) return;
   let pathname = '';
   try { pathname = new URL(window.webContents.getURL()).pathname; } catch {}
   if (!['/admin', '/admin/'].includes(pathname)) {
@@ -477,20 +368,26 @@ function openPortalHome() {
 
 function showPanel() {
   if (!panelWindow || !ballWindow) return;
+  revealBall();
   const ball = ballWindow.getBounds();
   const display = screen.getDisplayMatching(ball).workArea;
-  let x = ball.x - PANEL_WIDTH + ball.width;
+  const width = Math.min(PANEL_WIDTH, display.width - 16);
+  const height = Math.min(PANEL_HEIGHT, display.height - 16);
+  panelWindow.setSize(width, height, false);
+  let x = ball.x - width + ball.width;
   if (x < display.x + 8) x = ball.x + ball.width + 8;
-  let y = Math.round(ball.y + ball.height / 2 - PANEL_HEIGHT / 2);
-  y = Math.max(display.y + 8, Math.min(y, display.y + display.height - PANEL_HEIGHT - 8));
+  x = Math.max(display.x + 8, Math.min(x, display.x + display.width - width - 8));
+  let y = Math.round(ball.y + ball.height / 2 - height / 2);
+  y = Math.max(display.y + 8, Math.min(y, display.y + display.height - height - 8));
   panelWindow.setPosition(Math.round(x), Math.round(y), false);
   panelWindow.show();
   panelWindow.focus();
   broadcastState();
+  panelWindow.webContents.send('panel:opened');
 }
 
 function togglePanel() {
-  if (settings.edge) { revealBall(); return; }
+  if (settings.edge) { revealBall(); showPanel(); return; }
   panelWindow.isVisible() ? panelWindow.hide() : showPanel();
 }
 
@@ -545,37 +442,52 @@ function createTray() {
   const image = nativeImage.createFromPath(path.join(__dirname, '..', 'assets', 'icon.png')).resize({ width: 20, height: 20 });
   tray = new Tray(image);
   tray.setToolTip('教务悬浮助手');
+  updateTrayMenu();
+  tray.on('double-click', togglePanel);
+}
+
+function updateTrayMenu() {
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: '显示 / 收起课表', click: togglePanel },
     { label: '立即同步', click: () => syncSchedule({ showLogin: true }) },
     { label: '首次授权或重新登录', click: () => ensurePortalWindow(true) },
+    { label: '打开教务系统首页', click: openPortalHome },
+    { label: '登录后自动显示悬浮球', type: 'checkbox', checked: !smokeTest && app.getLoginItemSettings().openAtLogin,
+      enabled: app.isPackaged && !smokeTest, click: item => {
+        app.setLoginItemSettings({openAtLogin: item.checked, name: 'cn.liuli.imnu-schedule-float'});
+        settings.startAtLogin = item.checked;
+        saveSettings();
+        updateTrayMenu();
+      } },
     { type: 'separator' },
     { label: '退出教务悬浮助手', click: () => { app.isQuitting = true; app.quit(); } }
   ]));
-  tray.on('double-click', togglePanel);
 }
 
 function registerIPC() {
-  ipcMain.handle('state:get', () => state);
-  ipcMain.on('ball:activate', togglePanel);
-  ipcMain.on('ball:reveal', revealBall);
-  ipcMain.on('ball:drag-start', (_event, point) => {
-    if (settings.edge || !ballWindow) return;
+  const allowed = event => [ballWindow, panelWindow].some(window => window && !window.isDestroyed() && window.webContents === event.sender && event.senderFrame === event.sender.mainFrame);
+  const on = (channel, handler) => ipcMain.on(channel, (event, ...args) => { if (allowed(event)) return handler(event, ...args); });
+  const handle = (channel, handler) => ipcMain.handle(channel, (event, ...args) => { if (!allowed(event)) throw new Error('Untrusted sender'); return handler(event, ...args); });
+  handle('state:get', () => state);
+  on('ball:activate', togglePanel);
+  on('ball:reveal', revealBall);
+  on('ball:drag-start', (_event, point) => {
+    if (settings.edge || !ballWindow || !Number.isFinite(point?.x) || !Number.isFinite(point?.y)) return;
     dragOrigin = { pointerX: point.x, pointerY: point.y, bounds: ballWindow.getBounds() };
   });
-  ipcMain.on('ball:drag-move', (_event, point) => {
-    if (!dragOrigin || !ballWindow) return;
+  on('ball:drag-move', (_event, point) => {
+    if (!dragOrigin || !ballWindow || !Number.isFinite(point?.x) || !Number.isFinite(point?.y)) return;
     const x = Math.round(dragOrigin.bounds.x + point.x - dragOrigin.pointerX);
     const y = Math.round(dragOrigin.bounds.y + point.y - dragOrigin.pointerY);
     ballWindow.setPosition(x, y, false);
     if (panelWindow?.isVisible()) showPanel();
   });
-  ipcMain.on('ball:drag-end', finishBallDrag);
-  ipcMain.on('panel:hide', () => panelWindow?.hide());
-  ipcMain.on('action:authorize', () => ensurePortalWindow(true));
-  ipcMain.on('action:portal-home', openPortalHome);
-  ipcMain.on('action:sync', () => syncSchedule({ showLogin: true }));
-  ipcMain.on('network:changed', (_event, online) => {
+  on('ball:drag-end', finishBallDrag);
+  on('panel:hide', () => panelWindow?.hide());
+  on('action:authorize', () => ensurePortalWindow(true));
+  on('action:portal-home', openPortalHome);
+  on('action:sync', () => syncSchedule({ showLogin: true }));
+  on('network:changed', (_event, online) => {
     networkOnline = Boolean(online);
     if (!networkOnline) {
       markOffline();
@@ -583,7 +495,8 @@ function registerIPC() {
       reloadPortalAfterNetworkRecovery();
     }
   });
-  ipcMain.handle('action:clear', async () => {
+  handle('action:clear', async () => {
+    cacheGeneration += 1;
     try { fs.unlinkSync(dataPath('schedule-cache.json')); } catch {}
     if (portalWindow && !portalWindow.isDestroyed()) {
       await portalWindow.webContents.session.clearStorageData();
@@ -598,7 +511,7 @@ function registerIPC() {
     ensurePortalWindow(true).loadURL(PORTAL_URL);
     return true;
   });
-  ipcMain.on('action:quit', () => { app.isQuitting = true; app.quit(); });
+  on('action:quit', () => { app.isQuitting = true; app.quit(); });
 }
 
 const gotLock = app.requestSingleInstanceLock();
@@ -609,13 +522,27 @@ else {
     showPanel();
   });
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     loadLocalState();
     registerIPC();
     createBallWindow();
     createPanelWindow();
+    if (!smokeTest && app.isPackaged && settings.startAtLogin === undefined) {
+      app.setLoginItemSettings({openAtLogin: true, name: 'cn.liuli.imnu-schedule-float'});
+      settings.startAtLogin = true;
+      saveSettings();
+    }
     createTray();
-    ensurePortalWindow(state.courses.length === 0);
+    if (smokeTest) {
+      await require('./smoke-test').run({app, ballWindow, panelWindow, ensurePortalWindow, smokeOutput,
+        hideBallAtEdge, setFixture: value => { state = mergeSnapshot(state, value, normalizeCourses(value.courses)); broadcastState(); }});
+      return;
+    }
+    clockTimer = setInterval(() => {
+      const week = teachingWeek(state);
+      if (week !== state.currentWeek) { state.currentWeek = week; broadcastState(); }
+    }, 30000);
+    ensurePortalWindow(!state.updatedAt);
     refreshTimer = setInterval(() => syncSchedule(), REFRESH_INTERVAL);
     powerMonitor.on('resume', () => syncSchedule());
   });
@@ -625,4 +552,5 @@ app.on('window-all-closed', () => {});
 app.on('before-quit', () => {
   app.isQuitting = true;
   if (refreshTimer) clearInterval(refreshTimer);
+  if (clockTimer) clearInterval(clockTimer);
 });

@@ -1,0 +1,117 @@
+name: Build and release IMNU Schedule Float
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish this commit as the version in VERSION after all checks pass'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  windows:
+    name: Windows ${{ matrix.arch }}
+    runs-on: windows-2025
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: windows/package-lock.json
+      - run: npm ci --no-audit --no-fund
+        working-directory: windows
+      - run: npm test
+        working-directory: windows
+      - name: Build installer and portable package
+        run: npm run build -- --${{ matrix.arch }}
+        working-directory: windows
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Start the packaged application and verify the floating ball and timetable
+        if: matrix.arch == 'x64'
+        shell: pwsh
+        run: |
+          $env:IMNU_SMOKE_OUTPUT = Join-Path $env:RUNNER_TEMP 'imnu-smoke'
+          $process = Start-Process -FilePath './windows/dist/win-unpacked/IMNUScheduleFloat.exe' -ArgumentList '--smoke-test' -PassThru
+          if (-not $process.WaitForExit(45000)) { $process.Kill(); throw 'Packaged smoke test timed out' }
+          if ($process.ExitCode -ne 0) { throw "Packaged smoke test failed: $($process.ExitCode)" }
+          $result = Get-Content (Join-Path $env:IMNU_SMOKE_OUTPUT 'smoke.json') | ConvertFrom-Json
+          if (-not $result.passed) { throw 'Floating ball or UI check failed' }
+          Get-Content (Join-Path $env:IMNU_SMOKE_OUTPUT 'smoke.json')
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-${{ matrix.arch }}
+          path: |
+            windows/dist/IMNU-Schedule-Float-Windows-*-Setup.exe
+            windows/dist/IMNU-Schedule-Float-Windows-*.zip
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        if: matrix.arch == 'x64' && always()
+        with:
+          name: smoke-windows-x64
+          path: |
+            ${{ runner.temp }}/imnu-smoke/smoke.json
+            ${{ runner.temp }}/imnu-smoke/*.png
+          if-no-files-found: warn
+  macos:
+    name: macOS ${{ matrix.arch }}
+    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x86_64]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Run native data and session checks
+        run: ./Tests/run-data-regressions.sh
+      - name: Build standalone native app
+        run: bash Release/build-macos.sh '${{ matrix.arch }}'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos-${{ matrix.arch }}
+          path: release-out/IMNU-Schedule-Float-macOS-*.zip
+          if-no-files-found: error
+  release:
+    name: Publish downloads
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.publish == true
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: windows-*
+          merge-multiple: true
+          path: release-out
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: macos-*
+          merge-multiple: true
+          path: release-out
+      - name: Verify versions and all six downloads, then publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(cat VERSION)"
+          tag="v${version}"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then test "$GITHUB_REF_NAME" = "$tag"; fi
+          python3 -c 'import json,plistlib,pathlib; v=pathlib.Path("VERSION").read_text().strip(); assert json.load(open("windows/package.json"))["version"] == v; assert plistlib.load(open("Resources/Info.plist","rb"))["CFBundleShortVersionString"] == v'
+          python3 Release/verify-assets.py release-out "$version"
+          cd release-out
+          sha256sum IMNU-Schedule-Float-*.exe IMNU-Schedule-Float-*.zip > SHA256SUMS.txt
+          cd ..
+          gh release create "$tag" \
+            release-out/IMNU-Schedule-Float-*.exe release-out/IMNU-Schedule-Float-*.zip release-out/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" --title "教务悬浮助手 ${version} · Mac / Windows" --notes-file Release/RELEASE_NOTES.md

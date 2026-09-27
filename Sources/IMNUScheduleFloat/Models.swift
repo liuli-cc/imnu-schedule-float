@@ -1,5 +1,28 @@
 import Foundation
 
+enum LocalCalendar {
+    /// Returns the app's Monday=1 ... Sunday=7 weekday convention.
+    static func weekday(for date: Date, calendar: Calendar = .autoupdatingCurrent) -> Int {
+        let systemWeekday = calendar.component(.weekday, from: date)
+        return systemWeekday == 1 ? 7 : systemWeekday - 1
+    }
+
+    static func monday(containing date: Date, calendar: Calendar = .autoupdatingCurrent) -> Date {
+        let start = calendar.startOfDay(for: date)
+        return calendar.date(byAdding: .day, value: 1 - weekday(for: date, calendar: calendar), to: start) ?? start
+    }
+
+    static func teachingWeek(anchorWeek: Int?, anchorDate: Date?, on date: Date, maxWeek: Int,
+                             calendar: Calendar = .autoupdatingCurrent) -> Int? {
+        guard let anchorWeek, let anchorDate, anchorWeek > 0 else { return nil }
+        let start = monday(containing: anchorDate, calendar: calendar)
+        let target = monday(containing: date, calendar: calendar)
+        let days = calendar.dateComponents([.day], from: start, to: target).day ?? 0
+        let week = anchorWeek + days / 7
+        return (1...max(maxWeek, 1)).contains(week) ? week : nil
+    }
+}
+
 struct Course: Codable, Identifiable, Hashable {
     var id: UUID = UUID()
     var name: String
@@ -19,6 +42,25 @@ struct Course: Codable, Identifiable, Hashable {
 
     var timeText: String {
         SectionTime.text(startSection: startSection, endSection: endSection)
+    }
+}
+
+enum TeachingWeeks {
+    static func parse(_ raw: String) -> [Int]? {
+        let text = ["，", "、", ";", "；"].reduce(raw) { $0.replacingOccurrences(of: $1, with: ",") }
+        var result = Set<Int>()
+        for part in text.split(separator: ",") {
+            let values = part.split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }
+            guard let first = values.first, (1...60).contains(first) else { continue }
+            let last = values.count >= 2 ? values[1] : first
+            guard (1...60).contains(last) else { continue }
+            let isOdd = part.contains("单"), isEven = part.contains("双")
+            for week in min(first, last)...max(first, last)
+                where (!isOdd || !week.isMultiple(of: 2)) && (!isEven || week.isMultiple(of: 2)) {
+                result.insert(week)
+            }
+        }
+        return result.isEmpty ? nil : result.sorted()
     }
 }
 
@@ -43,6 +85,36 @@ enum SectionTime {
               let last = blocks.first(where: { $0.sections.contains(endSection) }) else { return "" }
         return "\(first.start)–\(last.end)"
     }
+
+    static func interval(startSection: Int, endSection: Int, on date: Date,
+                         calendar: Calendar = .autoupdatingCurrent) -> DateInterval? {
+        guard let first = blocks.first(where: { $0.sections.contains(startSection) }),
+              let last = blocks.first(where: { $0.sections.contains(endSection) }) else { return nil }
+        func time(_ text: String) -> Date? {
+            let parts = text.split(separator: ":").compactMap { Int($0) }
+            guard parts.count == 2 else { return nil }
+            return calendar.date(bySettingHour: parts[0], minute: parts[1], second: 0, of: date)
+        }
+        guard let start = time(first.start), let end = time(last.end), end > start else { return nil }
+        return DateInterval(start: start, end: end)
+    }
+}
+
+struct CourseOccurrence: Identifiable {
+    var course: Course
+    var startDate: Date
+    var endDate: Date
+    var id: String { "\(course.id.uuidString)-\(startDate.timeIntervalSince1970)" }
+    func isInProgress(at date: Date = .now) -> Bool { startDate <= date && date < endDate }
+}
+
+struct GradeStatistics {
+    var courseCount: Int
+    /// Credits attached to all cached records; repeated attempts remain separate.
+    var recordedCredits: Double
+    /// Credits only for records whose score explicitly indicates a passing result.
+    var earnedCredits: Double
+    var failedCourseCount: Int
 }
 
 struct StudentProfile: Codable, Equatable {
@@ -78,8 +150,11 @@ struct ScheduleCache: Codable {
     var profile: StudentProfile?
     var term: String?
     var maxWeek: Int?
+    var currentWeek: Int?
     var grades: [GradeRecord]?
     var gradesUpdatedAt: Date?
+    var currentWeekAnchorDate: Date?
+    var syncWarnings: [String]?
 }
 
 struct PortalSnapshot: Decodable {
@@ -89,6 +164,9 @@ struct PortalSnapshot: Decodable {
     var profile: StudentProfile
     var courses: [PortalCoursePayload]
     var grades: [PortalGradePayload]?
+    var gradeCategoriesSynced: [String]?
+    var currentWeekResolved: Bool?
+    var syncWarnings: [String]?
 }
 
 struct PortalCoursePayload: Decodable {

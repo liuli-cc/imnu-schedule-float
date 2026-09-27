@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import WebKit
 
 @MainActor
@@ -12,15 +13,24 @@ final class ScheduleStore: ObservableObject {
     @Published private(set) var currentWeek: Int?
     @Published private(set) var grades: [GradeRecord] = []
     @Published private(set) var gradesUpdatedAt: Date?
+    @Published private(set) var syncWarnings: [String] = []
+    /// Local wall-clock time. It is deliberately independent of the portal
+    /// session so the date and weekday continue working without internet.
+    @Published private(set) var localDate = Date()
 
     private let cacheURL: URL
     private var refreshTimer: Timer?
+    private var localClockTimer: Timer?
+    private var syncInProgress = false
+    private var cacheGeneration = 0
+    private var weekAnchor: Int?
+    private var weekAnchorDate: Date?
 
-    init() {
+    init(cacheURL suppliedCacheURL: URL? = nil) {
         let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("IMNUScheduleFloat", isDirectory: true)
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        cacheURL = directory.appendingPathComponent("schedule-cache.json")
+        cacheURL = suppliedCacheURL ?? directory.appendingPathComponent("schedule-cache.json")
+        try? FileManager.default.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         loadCache()
     }
 
@@ -36,16 +46,45 @@ final class ScheduleStore: ObservableObject {
         refreshTimer = nil
     }
 
+    func startLocalClock() {
+        localClockTimer?.invalidate()
+        localDate = Date()
+        updateTeachingWeek()
+        let timer = Timer(
+            timeInterval: 30,
+            target: self,
+            selector: #selector(localClockFired(_:)),
+            userInfo: nil,
+            repeats: true
+        )
+        localClockTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    func stopLocalClock() {
+        localClockTimer?.invalidate()
+        localClockTimer = nil
+    }
+
+    @objc private func localClockFired(_ timer: Timer) {
+        localDate = Date()
+        updateTeachingWeek()
+    }
+
     @objc private func refreshTimerFired(_ timer: Timer) {
         guard let session = timer.userInfo as? WebSession else { return }
         Task { await sync(using: session) }
     }
 
     func sync(using webSession: WebSession) async {
+        guard !syncInProgress else { return }
         guard webSession.isNetworkAvailable else {
             markOffline()
             return
         }
+        syncInProgress = true
+        let generation = cacheGeneration
+        defer { syncInProgress = false }
         syncState = .syncing
         do {
             let snapshot = try await webSession.fetchPortalSnapshot()
@@ -53,14 +92,36 @@ final class ScheduleStore: ObservableObject {
                 Self.course(from: payload, colorIndex: index)
             }
             let parsed = Self.mergeConsecutiveSections(sectionRows)
-            guard !parsed.isEmpty else { throw SyncError.noRecognizedCourses }
+            guard snapshot.courses.isEmpty || !parsed.isEmpty else { throw SyncError.noRecognizedCourses }
+            guard generation == cacheGeneration else { return }
+            let now = Date()
+            let sameTerm = currentTerm == snapshot.term
+            let accountChanged = !profile.studentNumber.isEmpty && !snapshot.profile.studentNumber.isEmpty
+                && profile.studentNumber != snapshot.profile.studentNumber
+            if accountChanged {
+                profile = .empty
+                grades = []
+                gradesUpdatedAt = nil
+            }
             courses = parsed
-            profile = snapshot.profile
+            profile = StudentProfile(
+                studentNumber: snapshot.profile.studentNumber.isEmpty ? profile.studentNumber : snapshot.profile.studentNumber,
+                name: snapshot.profile.name.isEmpty ? profile.name : snapshot.profile.name,
+                gpa: snapshot.profile.gpa.isEmpty ? profile.gpa : snapshot.profile.gpa
+            )
             currentTerm = snapshot.term
             maxWeek = max(snapshot.maxWeek, 1)
-            currentWeek = snapshot.currentWeek
+            if let officialWeek = snapshot.currentWeek, (1...maxWeek).contains(officialWeek) {
+                weekAnchor = officialWeek
+                weekAnchorDate = now
+            } else if snapshot.currentWeekResolved == true || !sameTerm || accountChanged {
+                weekAnchor = nil
+                weekAnchorDate = nil
+            }
+            localDate = now
+            updateTeachingWeek()
             if let gradePayloads = snapshot.grades {
-                grades = gradePayloads.map {
+                let refreshed = gradePayloads.map {
                     GradeRecord(
                         id: $0.id,
                         term: $0.term,
@@ -73,17 +134,27 @@ final class ScheduleStore: ObservableObject {
                         category: $0.category
                     )
                 }
-                gradesUpdatedAt = Date()
+                if let categories = snapshot.gradeCategoriesSynced {
+                    grades = grades.filter { !categories.contains($0.category) } + refreshed
+                    if Set(categories).isSuperset(of: ["主修", "辅修", "微专业"]) { gradesUpdatedAt = now }
+                } else {
+                    grades = refreshed
+                    gradesUpdatedAt = now
+                }
             }
-            lastUpdated = Date()
-            syncState = .ready(Date())
-            webSession.pageStatus = "课表、成绩与个人信息已保存到本机"
+            syncWarnings = snapshot.syncWarnings ?? []
+            lastUpdated = now
+            syncState = .ready(now)
+            webSession.pageStatus = syncWarnings.isEmpty ? "课表、成绩与个人信息已保存到本机" : "课表已保存；部分附加信息暂未更新"
             saveCache(source: "教务系统课表与成绩")
         } catch PortalError.authorizationRequired {
+            guard generation == cacheGeneration else { return }
             syncState = .needsAuthorization
         } catch PortalError.networkUnavailable {
+            guard generation == cacheGeneration else { return }
             markOffline()
         } catch {
+            guard generation == cacheGeneration else { return }
             syncState = .failed(error.localizedDescription)
         }
     }
@@ -92,6 +163,11 @@ final class ScheduleStore: ObservableObject {
         // Intentionally keep courses, profile, and the persisted session/cache.
         // A connectivity failure is not evidence that the user logged out.
         syncState = .offline
+    }
+
+    func markNeedsAuthorization(invalidatePendingSync: Bool = false) {
+        if invalidatePendingSync { cacheGeneration += 1 }
+        syncState = .needsAuthorization
     }
 
     func setEndpoint(_ endpoint: String) throws {
@@ -127,28 +203,42 @@ final class ScheduleStore: ObservableObject {
     }
 
     func clearEndpoint() {
+        cacheGeneration += 1
         CredentialStore.deleteScheduleEndpoint()
         courses = []
         profile = .empty
         currentTerm = ""
         currentWeek = nil
+        weekAnchor = nil
+        weekAnchorDate = nil
         grades = []
         gradesUpdatedAt = nil
+        syncWarnings = []
+        lastUpdated = nil
         try? FileManager.default.removeItem(at: cacheURL)
         syncState = .sample
     }
 
     func todayCourses(reference: Date = .now) -> [Course] {
-        guard let currentWeek else { return [] }
-        let weekday = Calendar.current.component(.weekday, from: reference)
-        let normalized = weekday == 1 ? 7 : weekday - 1
-        return courses(forWeek: currentWeek)
+        courses(on: reference, teachingWeek: teachingWeek(on: reference))
+    }
+
+    func tomorrowCourses(reference: Date = .now) -> [Course] {
+        let calendar = Calendar.autoupdatingCurrent
+        guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: reference) else { return [] }
+        return courses(on: tomorrow, teachingWeek: teachingWeek(on: tomorrow))
+    }
+
+    private func courses(on date: Date, teachingWeek: Int?) -> [Course] {
+        guard let teachingWeek else { return [] }
+        let normalized = LocalCalendar.weekday(for: date)
+        return courses(forWeek: teachingWeek)
             .filter { $0.weekday == normalized }
             .sorted { $0.startSection < $1.startSection }
     }
 
     func courses(forWeek week: Int?) -> [Course] {
-        guard let week else { return [] }
+        guard let week, (1...maxWeek).contains(week) else { return [] }
         return courses.filter { course in
             guard let activeWeeks = course.activeWeeks, !activeWeeks.isEmpty else { return true }
             return activeWeeks.contains(week)
@@ -165,7 +255,36 @@ final class ScheduleStore: ObservableObject {
         lastUpdated = cached.updatedAt
         grades = cached.grades ?? []
         gradesUpdatedAt = cached.gradesUpdatedAt
+        weekAnchor = cached.currentWeek
+        weekAnchorDate = cached.currentWeekAnchorDate ?? cached.updatedAt
+        syncWarnings = cached.syncWarnings ?? []
+        updateTeachingWeek()
         syncState = .ready(cached.updatedAt)
+    }
+
+    /// Advance only from a real portal week; the cache file's age is not a
+    /// semester start date. Monday boundaries work across DST and year changes.
+    private func teachingWeek(on date: Date) -> Int? {
+        LocalCalendar.teachingWeek(anchorWeek: weekAnchor, anchorDate: weekAnchorDate, on: date, maxWeek: maxWeek)
+    }
+
+    private func updateTeachingWeek() {
+        currentWeek = teachingWeek(on: localDate)
+    }
+
+    func nextCourse(reference: Date = .now) -> CourseOccurrence? {
+        let calendar = Calendar.autoupdatingCurrent
+        for offset in 0..<(maxWeek * 7) {
+            guard let date = calendar.date(byAdding: .day, value: offset, to: reference),
+                  let week = teachingWeek(on: date) else { continue }
+            let occurrences = courses(on: date, teachingWeek: week).compactMap { course -> CourseOccurrence? in
+                guard let interval = SectionTime.interval(startSection: course.startSection, endSection: course.endSection, on: date),
+                      interval.end > reference else { return nil }
+                return CourseOccurrence(course: course, startDate: interval.start, endDate: interval.end)
+            }
+            if let next = occurrences.min(by: { $0.startDate < $1.startDate }) { return next }
+        }
+        return nil
     }
 
     private func saveCache(source: String) {
@@ -177,8 +296,11 @@ final class ScheduleStore: ObservableObject {
             profile: profile,
             term: currentTerm,
             maxWeek: maxWeek,
+            currentWeek: weekAnchor,
             grades: grades,
-            gradesUpdatedAt: gradesUpdatedAt
+            gradesUpdatedAt: gradesUpdatedAt,
+            currentWeekAnchorDate: weekAnchorDate,
+            syncWarnings: syncWarnings
         )
         guard let data = try? JSONEncoder().encode(cache) else { return }
         do {
@@ -200,6 +322,21 @@ final class ScheduleStore: ObservableObject {
         }
     }
 
+    func gradeStatistics(forTerm term: String? = nil) -> GradeStatistics {
+        let records = term.map { grades(forTerm: $0) } ?? grades
+        func passing(_ grade: GradeRecord) -> Bool? {
+            let score = grade.score.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let number = Double(score) { return number >= 60 }
+            if ["优秀", "良好", "中等", "及格", "合格", "通过"].contains(score) { return true }
+            if ["不及格", "不合格", "未通过"].contains(score) { return false }
+            return nil
+        }
+        return GradeStatistics(courseCount: records.count,
+            recordedCredits: records.reduce(0) { $0 + (Double($1.credit) ?? 0) },
+            earnedCredits: records.filter { passing($0) == true }.reduce(0) { $0 + (Double($1.credit) ?? 0) },
+            failedCourseCount: records.filter { passing($0) == false }.count)
+    }
+
     private static func course(from payload: PortalCoursePayload, colorIndex: Int) -> Course? {
         let name = payload.name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, (1...7).contains(payload.weekday) else { return nil }
@@ -212,7 +349,7 @@ final class ScheduleStore: ObservableObject {
             startSection: sections.0,
             endSection: sections.1,
             weeks: payload.weeks,
-            activeWeeks: weekNumbers(payload.weeks),
+            activeWeeks: TeachingWeeks.parse(payload.weeks),
             colorIndex: colorIndex % 6
         )
     }
@@ -253,25 +390,7 @@ final class ScheduleStore: ObservableObject {
         return merged
     }
 
-    private static func weekNumbers(_ raw: String) -> [Int]? {
-        let text = raw.replacingOccurrences(of: "，", with: ",")
-        let isOdd = text.contains("单")
-        let isEven = text.contains("双")
-        var result = Set<Int>()
-        for part in text.split(separator: ",") {
-            let values = part.split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }
-            if values.count >= 2 {
-                let lower = min(values[0], values[1])
-                let upper = max(values[0], values[1])
-                for week in lower...upper where (!isOdd || week.isMultiple(of: 2) == false) && (!isEven || week.isMultiple(of: 2)) {
-                    result.insert(week)
-                }
-            } else if let week = values.first {
-                result.insert(week)
-            }
-        }
-        return result.isEmpty ? nil : result.sorted()
-    }
+
 }
 
 enum SyncError: LocalizedError {
@@ -308,6 +427,7 @@ enum ScheduleParser {
                 startSection: sections.0,
                 endSection: sections.1,
                 weeks: value(item, keys: ["zcd", "ZCD", "weeks", "weekRange", "zc", "skzc"]),
+                activeWeeks: TeachingWeeks.parse(value(item, keys: ["zcd", "ZCD", "weeks", "weekRange", "zc", "skzc"])),
                 colorIndex: index % 6
             )
         }
