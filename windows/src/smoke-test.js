@@ -56,10 +56,13 @@ exports.run = async ({app, ballWindow, panelWindow, ensurePortalWindow, smokeOut
     assert.equal(ballWindow.isVisible(), true);
     hideBallAtEdge('right');
     await until(() => inspect(ballWindow, 'Boolean(document.querySelector(".edge-handle"))'), 'edge handle');
+    await inspect(ballWindow, 'document.querySelector(".edge-handle").dispatchEvent(new MouseEvent("mouseenter"))');
+    await pause(200);
+    assert.equal(ballWindow.getBounds().width, 12, 'Hover must keep the click target under the cursor');
     await inspect(ballWindow, 'document.querySelector(".edge-handle").click()');
     await until(() => panelWindow.isVisible(), 'single edge click opening');
     assert.equal(ballWindow.getBounds().width, 60);
-    record('edge handle opens the panel in one click; closing keeps the ball');
+    record('hover preserves the edge click target; one click opens the panel; closing keeps the ball');
     assert.equal(await inspect(panelWindow, 'getComputedStyle(document.querySelector(".primary-button")).backgroundColor'), 'rgb(125, 103, 175)');
     await inspect(panelWindow, 'document.querySelector(".profile-button").click()');
     await until(() => portal.isVisible(), 'profile homepage shortcut');

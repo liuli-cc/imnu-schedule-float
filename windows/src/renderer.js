@@ -36,9 +36,8 @@ function renderBall(ballMode = 'ball') {
   document.body.className = ballMode === 'handle' ? 'ball-page handle-page' : 'ball-page';
   const control = element('button', ballMode === 'handle' ? 'edge-handle' : 'floating-ball');
   control.type = 'button';
-  control.setAttribute('aria-label', ballMode === 'handle' ? '显示教务悬浮球' : `教务悬浮助手，${appState.message}`);
+  control.setAttribute('aria-label', ballMode === 'handle' ? '打开课表' : `教务悬浮助手，${appState.message}`);
   if (ballMode === 'handle') {
-    control.addEventListener('mouseenter', () => window.assistantAPI.revealBall());
     control.addEventListener('click', () => window.assistantAPI.activateBall());
   } else {
     control.append(iconCalendar());
