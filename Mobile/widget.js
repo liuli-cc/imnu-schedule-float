@@ -5,6 +5,7 @@
 /* __MOBILE_CORE__ */
 const EMBEDDED_DATA = /* __MOBILE_DATA__ */;
 const PHONE_HTML = /* __MOBILE_HTML__ */;
+const BACKGROUND = /* __MOBILE_BACKGROUND__ */;
 const Core = IMNUScheduleCore;
 const local = FileManager.local();
 const store = local.joinPath(local.documentsDirectory(), 'IMNU-widget');
@@ -40,9 +41,9 @@ async function loadData() {
   return saveData(candidates[0]);
 }
 function color(light, dark) { return Color.dynamic(new Color(light), new Color(dark)); }
-function ink() { return color('#25212e', '#f5f3fa'); }
-function muted() { return color('#5c546b', '#c3becd'); }
-function accent() { return color('#68508d', '#c4b2f5'); }
+function ink() { return color('#252a30', '#f5f2ec'); }
+function muted() { return color('#555e68', '#c2cbd3'); }
+function accent() { return color('#355b77', '#a9c9e3'); }
 function text(stack, value, size, weight, tint, lines = 1) {
   const item = stack.addText(String(value));
   item.font = weight === 'bold' ? Font.boldSystemFont(size) : weight === 'medium' ? Font.mediumSystemFont(size) : Font.systemFont(size);
@@ -57,7 +58,7 @@ function buildWidget(raw, family, now = new Date(), parameter = '') {
   if (accessory) widget.addAccessoryWidgetBackground = true;
   else {
     const gradient = new LinearGradient();
-    gradient.colors = [color('#f5f3fa','#383342'), color('#e8e2f0','#201e28')];
+    gradient.colors = [color('#f7f4ee','#303740'), color('#e8edf0','#1e252d')];
     gradient.locations = [0, 1]; gradient.startPoint = new Point(0, 0); gradient.endPoint = new Point(1, 1);
     widget.backgroundGradient = gradient;
   }
@@ -69,7 +70,36 @@ function buildWidget(raw, family, now = new Date(), parameter = '') {
   const time = primary ? Core.times(primary.course) : null;
   const title = !raw ? '导入课表' : week === null ? '教学周待确认' : !primary ? '暂无课程' : primary.course.name;
   const hint = !raw ? '点击设置' : week === null ? '点击更新课表' : !primary ? '打开完整课表' : time ? time.start + '–' + time.end : '时间待确认';
-  if (family === 'accessoryInline') {
+  let illustration = null;
+  if (family === 'medium' && BACKGROUND) {
+    try { illustration = Image.fromData(Data.fromBase64String(BACKGROUND)); } catch (_) {}
+  }
+  if (illustration) {
+    // The supplied horizontal artwork already has a blurred, light text area.
+    // Keep text inside its left half and use fixed dark ink even in dark mode.
+    widget.backgroundImage = illustration;
+    widget.backgroundGradient = null;
+    const screen = Device.screenSize();
+    const width = Math.min(205, Math.max(145, (Math.min(screen.width, screen.height) - 56) * 0.53 - 15));
+    const row = widget.addStack();
+    const column = row.addStack(); column.layoutVertically(); column.size = new Size(width, 0);
+    row.addSpacer();
+    const dark = new Color('#252a30'), blue = new Color('#355b77'), secondary = new Color('#4b5662');
+    text(column, (target === today ? '课表' : '明天') + '  ·  ' + (week === null ? '待更新' : '第 ' + week + ' 周'), 11, 'medium', secondary);
+    column.addSpacer(7);
+    const clock = column.addStack(); clock.centerAlignContent();
+    text(clock, time ? time.start : '—', 28, 'bold', blue);
+    clock.addSpacer(7);
+    text(clock, primary ? primary.inProgress ? '正在上课' : Core.labelFor(primary.key,today) : '', 10, 'medium', secondary);
+    column.addSpacer(4);
+    text(column, title, 16, 'bold', dark, 2);
+    column.addSpacer(4);
+    text(column, primary ? primary.course.location || '教室待公布' : hint, 11, 'medium', secondary);
+    column.addSpacer(8);
+    const age = raw ? Core.staleDays(raw, now) : null;
+    text(column, !raw || week === null ? '点此更新课表' : age !== null && age >= 7 ? age + ' 天未更新 · 点此查看' : time ? '至 ' + time.end + '  ·  点此查看' : '点此查看完整课表', 10, 'regular', secondary);
+    widget.addSpacer();
+  } else if (family === 'accessoryInline') {
     text(widget, primary ? (time ? time.start + ' ' : '') + title + ' · ' + (primary.course.location || '教室待公布') : title, 12, 'medium', Color.white());
   } else if (family === 'accessoryCircular') {
     const stack = widget.addStack(); stack.layoutVertically(); stack.centerAlignContent();

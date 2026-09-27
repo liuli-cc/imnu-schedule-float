@@ -57,6 +57,7 @@ const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
 const script=fs.readFileSync(path.join(__dirname,'widget.js'),'utf8')
   .replace('/* __MOBILE_CORE__ */',fs.readFileSync(path.join(__dirname,'core.js'),'utf8'))
   .replace('/* __MOBILE_DATA__ */',JSON.stringify(demo))
+  .replace('/* __MOBILE_BACKGROUND__ */','null')
   .replace('/* __MOBILE_HTML__ */',JSON.stringify(fs.readFileSync(path.join(__dirname,'panel.html'),'utf8')));
 check('交付脚本支持顶层 await',()=>new AsyncFunction(script));
 let completed=false,currentWidget=null;
@@ -65,6 +66,7 @@ const manager={documentsDirectory:()=>'/documents',joinPath:(a,b)=>a+'/'+b,fileE
 const sandbox={Date,Set,Math,Number,JSON,Error,Array,String,Promise,console,Color,ListWidget,
   Font:{systemFont:n=>({size:n}),mediumSystemFont:n=>({size:n,weight:'medium'}),boldSystemFont:n=>({size:n,weight:'bold'})},
   Point:class{constructor(x,y){this.x=x;this.y=y;}},Size:class{constructor(width,height){this.width=width;this.height=height;}},
+  Device:{screenSize:()=>({width:430,height:932})},Data:{fromBase64String:s=>Buffer.from(s,'base64')},Image:{fromData:d=>({bytes:d})},
   LinearGradient:class{},SFSymbol:{named:()=>({image:'sf-symbol'})},FileManager:{local:()=>manager,iCloud:()=>({...manager,fileExists:()=>false})},
   URLScheme:{forRunningScript:()=> 'scriptable:///run/IMNU'},
   Script:{setWidget:w=>currentWidget=w,complete:()=>completed=true},config:{runsInWidget:true,widgetFamily:'medium'},args:{widgetParameter:''}};
@@ -114,6 +116,22 @@ async function main(){
     for(const line of fs.readFileSync(path.join(output,'SHA256SUMS.txt'),'utf8').trim().split('\n')){const [sum,file]=line.split('  ');assert.equal(require('node:crypto').createHash('sha256').update(fs.readFileSync(path.join(output,file))).digest('hex'),sum);}
     const refuse=spawnSync('python3',[path.join(__dirname,'export-mobile.py'),'--generic','--output',output,'--refresh'],{encoding:'utf8'});assert.notEqual(refuse.status,0);
     assert.ok((fs.statSync(path.join(output,'内师大课表.json')).mode&0o777)===0o600);checks++;console.log('PASS Swift 日期转换、凭据过滤与交付脚本');
+    const imagePath=path.join(temporary,'background.png');
+    // A valid tiny PNG exercises transport; image rendering is verified on iPhone.
+    const imageBytes=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aK10AAAAASUVORK5CYII=','base64');
+    fs.writeFileSync(imagePath,imageBytes);
+    const themedOutput=path.join(temporary,'themed');
+    const themed=spawnSync('python3',[path.join(__dirname,'export-mobile.py'),'--cache',cachePath,'--background',imagePath,'--output',themedOutput],{encoding:'utf8'});assert.equal(themed.status,0,themed.stderr);
+    const themedScript=JSON.parse(fs.readFileSync(path.join(themedOutput,'内师大课表.scriptable'),'utf8')).script;
+    const themedSandbox={...sandbox};await vm.runInNewContext('(async()=>{'+themedScript.replace('await main();','globalThis.build=buildWidget;')+'})()',themedSandbox);
+    for (const width of [320,375,393,430]) {
+      themedSandbox.Device={screenSize:()=>({width,height:932})};
+      const w=themedSandbox.build(demo,'medium',now);assert.deepEqual(w.backgroundImage.bytes,imageBytes);assert.ok(allText(w).includes('08:20'));assert.ok(allText(w).includes('示例'));
+    }
+    assert.equal(themedSandbox.build(demo,'accessoryInline',now).backgroundImage,undefined);
+    checks++;console.log('PASS 横幅嵌入、四种手机宽度与锁屏隔离');
+    fs.writeFileSync(imagePath,'not an image');
+    const rejected=spawnSync('python3',[path.join(__dirname,'export-mobile.py'),'--generic','--background',imagePath,'--output',path.join(temporary,'invalid')],{encoding:'utf8'});assert.notEqual(rejected.status,0);assert.ok(!fs.existsSync(path.join(temporary,'invalid')));checks++;console.log('PASS 无效背景不会留下半成品');
     const publicOutput=path.join(temporary,'public');const generic=spawnSync('python3',[path.join(__dirname,'export-mobile.py'),'--generic','--output',publicOutput],{encoding:'utf8'});assert.equal(generic.status,0,generic.stderr);assert.ok(!fs.existsSync(path.join(publicOutput,'内师大课表.json')));checks++;console.log('PASS 公开包无个人课表');
   }finally{fs.rmSync(temporary,{recursive:true,force:true});}
   if(process.argv.includes('--preview')){
