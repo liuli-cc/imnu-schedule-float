@@ -27,7 +27,7 @@ python3 Mobile/export-mobile.py --generic --output release-out/IMNU-iPhone-Widge
 
 `core.js` 处理 Asia/Shanghai 日期、官网周锚、单双周、课程时间、状态和刷新边界。`widget.js` 仅调用 Scriptable 官方 API，`panel.html` 为离线完整课表。`export-mobile.py` 将其拼成单文件，并生成备用 JS、说明和 SHA256。专用包只能放在忽略的输出目录或仓库外，禁止提交私人课表。
 
-测试覆盖数据逻辑、隐私字段过滤、Scriptable API 调用、各尺寸输出以及 Python 实际打包后的打开课表流程；浏览器检查也使用真实打包产物生成的页面和合成数据。在目标 iPhone 上已确认专用包 AirDrop 接收、Scriptable 导入、课表与成绩打开、中号小组件预览。主屏幕安装、锁屏布局与后台刷新仍需分别验证。
+测试覆盖数据逻辑、隐私字段过滤、Scriptable API 调用、各尺寸输出以及 Python 实际打包后的打开课表流程；浏览器检查也使用真实打包产物生成的页面和合成数据。在目标 iPhone 上已确认专用包 AirDrop 接收、Scriptable 导入、课表与成绩打开、中号小组件预览，以及主屏幕小组件的课程显示和点击直接打开课表。锁屏布局与后台刷新仍需分别验证。
 
 1.0.1 修复了专用包导出时误替换页面数据标记的问题。已导入 1.0.0 的用户请导入新的 `.scriptable` 文件。Scriptable 会给同名脚本追加数字；请运行最新导入的脚本，并在“编辑小组件”中重新选择它。
 

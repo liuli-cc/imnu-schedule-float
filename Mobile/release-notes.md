@@ -8,4 +8,4 @@
 
 这是 Scriptable 小组件脚本，**不是独立签名 IPA / TestFlight 安装包**。需先安装 [Scriptable](https://apps.apple.com/app/scriptable/id1405459188)。iOS 决定小组件的真实刷新时机，不能跨其他 App 悬浮。
 
-验证：25 项逻辑、隐私导出、Scriptable API 模拟及实际打包后打开课表的回归检查；打包产物的手机页面在 320、375、393、430px 浏览器尺寸与深浅色下检查。在目标 iPhone 上已确认专用包 AirDrop 接收、Scriptable 导入、课表与成绩打开、中号小组件预览。主屏幕安装、锁屏布局与后台刷新仍需分别验证。Mac / Windows 最新安装包仍在 v1.1.1。
+验证：25 项逻辑、隐私导出、Scriptable API 模拟及实际打包后打开课表的回归检查；打包产物的手机页面在 320、375、393、430px 浏览器尺寸与深浅色下检查。在目标 iPhone 上已确认专用包 AirDrop 接收、Scriptable 导入、课表与成绩打开、中号小组件预览，以及主屏幕小组件的课程显示和点击直接打开课表。锁屏布局与后台刷新仍需分别验证。Mac / Windows 最新安装包仍在 v1.1.1。
