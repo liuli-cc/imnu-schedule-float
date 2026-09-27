@@ -29,8 +29,8 @@ jobs:
         working-directory: windows
       - run: npm test
         working-directory: windows
-      - name: Build installer and portable package
-        run: npm run build -- --${{ matrix.arch }}
+      - name: Build standalone application
+        run: npx electron-builder --win dir --${{ matrix.arch }}
         working-directory: windows
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
@@ -45,6 +45,11 @@ jobs:
           $result = Get-Content (Join-Path $env:IMNU_SMOKE_OUTPUT 'smoke.json') | ConvertFrom-Json
           if (-not $result.passed) { throw 'Floating ball or UI check failed' }
           Get-Content (Join-Path $env:IMNU_SMOKE_OUTPUT 'smoke.json')
+      - name: Package the verified application as installer and portable ZIP
+        run: npm run build -- --${{ matrix.arch }} --prepackaged 'dist/${{ matrix.arch == 'x64' && 'win-unpacked' || 'win-arm64-unpacked' }}'
+        working-directory: windows
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - uses: actions/upload-artifact@v7
         with:
           name: windows-${{ matrix.arch }}

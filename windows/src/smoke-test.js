@@ -2,6 +2,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check, label) {
   const deadline = Date.now() + 10000;
@@ -16,6 +17,7 @@ async function until(check, label) {
 exports.run = async ({app, ballWindow, panelWindow, ensurePortalWindow, smokeOutput, hideBallAtEdge, setFixture}) => {
   const report = {passed:false, version:app.getVersion(), arch:process.arch, checks:[]};
   const capture = async (window, name) => {
+    await pause(420); // Capture the settled compositor frame, after the spring animation.
     const frame = await Promise.race([
       window.webContents.capturePage(),
       pause(3000).then(() => { throw new Error('Screenshot timed out: ' + name); })
@@ -69,7 +71,33 @@ exports.run = async ({app, ballWindow, panelWindow, ensurePortalWindow, smokeOut
     await inspect(ballWindow, 'document.querySelector(".edge-handle").dispatchEvent(new MouseEvent("mouseenter"))');
     await pause(200);
     assert.equal(await inspect(ballWindow, 'Boolean(document.querySelector(".edge-handle"))'), true, 'Hover must keep the click target under the cursor');
-    assert.equal(ballWindow.getBounds().width, 12, 'The native window must match the narrow edge handle');
+    const edgeRect = await inspect(ballWindow, '(() => { const r = document.querySelector(".edge-handle").getBoundingClientRect(); return {x:r.x,y:r.y,width:r.width,height:r.height}; })()');
+    assert.equal(edgeRect.width, 12);
+    if (process.platform === 'win32') {
+      // Read the actual OS hit region rather than assuming Windows accepts tiny windows.
+      const hwnd = ballWindow.getNativeWindowHandle().readBigUInt64LE().toString();
+      const region = JSON.parse(execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public static class IMNURegion {
+  [DllImport("gdi32.dll")] public static extern IntPtr CreateRectRgn(int a,int b,int c,int d);
+  [DllImport("user32.dll")] public static extern int GetWindowRgn(IntPtr window,IntPtr region);
+  [DllImport("gdi32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool PtInRegion(IntPtr region,int x,int y);
+  [DllImport("gdi32.dll")] public static extern bool DeleteObject(IntPtr region);
+}
+'@
+$r = [IMNURegion]::CreateRectRgn(0,0,0,0)
+try {
+  $kind = [IMNURegion]::GetWindowRgn([IntPtr]${hwnd}, $r)
+  [ordered]@{kind=$kind;inside=[IMNURegion]::PtInRegion($r,26,24);outside=[IMNURegion]::PtInRegion($r,6,24)} | ConvertTo-Json -Compress
+} finally { [void][IMNURegion]::DeleteObject($r) }
+`], {encoding:'utf8', timeout:10000}).trim());
+      assert.ok(region.kind > 0);
+      assert.equal(region.inside, true);
+      assert.equal(region.outside, false, 'Transparent space must not intercept desktop clicks');
+      report.edgeRegion = region;
+    }
     await inspect(ballWindow, 'document.querySelector(".edge-handle").click()');
     await until(() => panelWindow.isVisible(), 'single edge click opening');
     assert.equal(ballWindow.getBounds().width, 60);

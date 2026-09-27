@@ -10,6 +10,7 @@ let selectedView = 'today';
 let selectedWeek = 1;
 let selectedGradeTerm = 'all';
 let renderedLocalDateKey = '';
+let edgeSide = 'left';
 const CLASS_TIME_BLOCKS = [
   { startSection: 1, endSection: 2, start: '08:20', end: '10:00' },
   { startSection: 3, endSection: 4, start: '10:20', end: '12:00' },
@@ -32,8 +33,9 @@ function iconCalendar() {
 }
 
 function renderBall(ballMode = 'ball') {
+  if (typeof ballMode === 'object') { edgeSide = ballMode.side; ballMode = ballMode.mode; }
   appRoot.replaceChildren();
-  document.body.className = ballMode === 'handle' ? 'ball-page handle-page' : 'ball-page';
+  document.body.className = ballMode === 'handle' ? `ball-page handle-page ${edgeSide === 'right' ? 'handle-right' : ''}` : 'ball-page';
   const control = element('button', ballMode === 'handle' ? 'edge-handle' : 'floating-ball');
   control.type = 'button';
   control.setAttribute('aria-label', ballMode === 'handle' ? '打开课表' : `教务悬浮助手，${appState.message}`);

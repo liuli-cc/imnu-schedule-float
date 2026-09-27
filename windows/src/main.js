@@ -14,6 +14,7 @@ const PORTAL_URL = 'https://jwxt.imnu.edu.cn';
 const REFRESH_INTERVAL = 45 * 60 * 1000;
 const BALL_SIZE = 60;
 const HANDLE_WIDTH = 12;
+const HANDLE_WINDOW_WIDTH = process.platform === 'win32' ? 32 : HANDLE_WIDTH;
 const HANDLE_HEIGHT = 48;
 const PANEL_WIDTH = 410;
 const PANEL_HEIGHT = 610;
@@ -397,14 +398,20 @@ function hideBallAtEdge(side) {
   const current = ballWindow.getBounds();
   const work = screen.getDisplayMatching(current).workArea;
   const y = Math.max(work.y + 8, Math.min(current.y + Math.round((BALL_SIZE - HANDLE_HEIGHT) / 2), work.y + work.height - HANDLE_HEIGHT - 8));
-  const x = side === 'left' ? work.x : work.x + work.width - HANDLE_WIDTH;
+  const x = side === 'left' ? work.x : work.x + work.width - HANDLE_WINDOW_WIDTH;
   settings.edge = side;
   settings.ballX = current.x;
   settings.ballY = current.y;
   saveSettings();
   panelWindow?.hide();
-  ballWindow.setBounds({ x, y, width: HANDLE_WIDTH, height: HANDLE_HEIGHT }, false);
-  ballWindow.webContents.send('ball:mode', 'handle');
+  ballWindow.setBounds({ x, y, width: HANDLE_WINDOW_WIDTH, height: HANDLE_HEIGHT }, false);
+  // Windows retains a larger native host. The OS region clips both painting
+  // and hit testing to the 12-DIP handle, so transparent space cannot steal clicks.
+  if (process.platform === 'win32') ballWindow.setShape([{
+    x: side === 'left' ? 0 : HANDLE_WINDOW_WIDTH - HANDLE_WIDTH,
+    y: 0, width: HANDLE_WIDTH, height: HANDLE_HEIGHT
+  }]);
+  ballWindow.webContents.send('ball:mode', {mode: 'handle', side});
   ballWindow.showInactive();
 }
 
@@ -420,6 +427,7 @@ function revealBall() {
   settings.ballY = y;
   saveSettings();
   ballWindow.setBounds({ x, y, width: BALL_SIZE, height: BALL_SIZE }, false);
+  if (process.platform === 'win32') ballWindow.setShape([]);
   ballWindow.webContents.send('ball:mode', 'ball');
   ballWindow.showInactive();
 }

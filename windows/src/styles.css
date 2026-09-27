@@ -59,7 +59,8 @@ button { font: inherit; }
 .status-needsAuthorization, .status-failed { background: #ff5264; }
 .status-sample { background: #b4a2df; }
 .handle-page { display: block; }
-.edge-handle { width: 100%; height: 100%; border: 1px solid rgba(255,255,255,.24); border-radius: 0 7px 7px 0; background: linear-gradient(180deg, #625b72, #292631); cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,.3); }
+.edge-handle { width: 12px; height: 48px; padding: 0; border: 1px solid rgba(255,255,255,.24); border-radius: 0 7px 7px 0; background: linear-gradient(180deg, #625b72, #292631); cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,.3); }
+.handle-right .edge-handle { margin-left: calc(100vw - 12px); border-radius: 7px 0 0 7px; }
 
 .panel-page { padding: 1px; color: var(--ink); }
 .schedule-panel {
