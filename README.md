@@ -2,7 +2,7 @@
 
 以内蒙古师范大学课表为主的桌面悬浮球。点击一次即可查看今天、明天、本周、本学期的课程和上课时间，也可查询全部学期成绩、学分、绩点，并从个人信息入口打开教务官网。
 
-当前版本 **1.1.0**。保留悬浮球、靠边隐藏、灰紫色透明面板与弹性展开；macOS 使用原生毛玻璃，Windows 11 22H2 及以上使用系统 Acrylic，较早的 Windows 使用半透明面板。
+当前版本 **1.1.1**。保留悬浮球、靠边隐藏、灰紫色透明面板与弹性展开；macOS 使用原生毛玻璃，Windows 11 22H2 及以上使用系统 Acrylic，较早的 Windows 使用半透明面板。
 
 ## 选择你的版本
 
@@ -10,12 +10,12 @@
 
 | 电脑 | 推荐下载 | 免安装 / 便携包 |
 | --- | --- | --- |
-| Mac · Apple M 系列 | [macOS Apple 芯片版 ZIP](https://github.com/liuli-cc/imnu-schedule-float/releases/download/v1.1.0/IMNU-Schedule-Float-macOS-arm64-1.1.0.zip) | 同左 |
-| Mac · Intel | [macOS Intel 版 ZIP](https://github.com/liuli-cc/imnu-schedule-float/releases/download/v1.1.0/IMNU-Schedule-Float-macOS-x86_64-1.1.0.zip) | 同左 |
-| Windows · Intel / AMD | [Windows x64 安装版](https://github.com/liuli-cc/imnu-schedule-float/releases/download/v1.1.0/IMNU-Schedule-Float-Windows-x64-1.1.0-Setup.exe) | [Windows x64 ZIP](https://github.com/liuli-cc/imnu-schedule-float/releases/download/v1.1.0/IMNU-Schedule-Float-Windows-x64-1.1.0.zip) |
-| Windows · ARM / Snapdragon | [Windows ARM64 安装版](https://github.com/liuli-cc/imnu-schedule-float/releases/download/v1.1.0/IMNU-Schedule-Float-Windows-arm64-1.1.0-Setup.exe) | [Windows ARM64 ZIP](https://github.com/liuli-cc/imnu-schedule-float/releases/download/v1.1.0/IMNU-Schedule-Float-Windows-arm64-1.1.0.zip) |
+| Mac · Apple M 系列 | [macOS Apple 芯片版 ZIP](https://github.com/liuli-cc/imnu-schedule-float/releases/download/v1.1.1/IMNU-Schedule-Float-macOS-arm64-1.1.1.zip) | 同左 |
+| Mac · Intel | [macOS Intel 版 ZIP](https://github.com/liuli-cc/imnu-schedule-float/releases/download/v1.1.1/IMNU-Schedule-Float-macOS-x86_64-1.1.1.zip) | 同左 |
+| Windows · Intel / AMD | [Windows x64 安装版](https://github.com/liuli-cc/imnu-schedule-float/releases/download/v1.1.1/IMNU-Schedule-Float-Windows-x64-1.1.1-Setup.exe) | [Windows x64 ZIP](https://github.com/liuli-cc/imnu-schedule-float/releases/download/v1.1.1/IMNU-Schedule-Float-Windows-x64-1.1.1.zip) |
+| Windows · ARM / Snapdragon | [Windows ARM64 安装版](https://github.com/liuli-cc/imnu-schedule-float/releases/download/v1.1.1/IMNU-Schedule-Float-Windows-arm64-1.1.1-Setup.exe) | [Windows ARM64 ZIP](https://github.com/liuli-cc/imnu-schedule-float/releases/download/v1.1.1/IMNU-Schedule-Float-Windows-arm64-1.1.1.zip) |
 
-[全部下载和更新说明](https://github.com/liuli-cc/imnu-schedule-float/releases/latest) · [SHA256 校验文件](https://github.com/liuli-cc/imnu-schedule-float/releases/download/v1.1.0/SHA256SUMS.txt)
+[全部下载和更新说明](https://github.com/liuli-cc/imnu-schedule-float/releases/latest) · [SHA256 校验文件](https://github.com/liuli-cc/imnu-schedule-float/releases/download/v1.1.1/SHA256SUMS.txt)
 
 系统要求：macOS 14 及以上；Windows 10 / 11。Mac 可在“关于本机”查看芯片；Windows 在“设置 → 系统 → 系统信息”查看系统类型。Windows ARM64 包已检查架构，尚未经过 ARM 实机交互验收。
 

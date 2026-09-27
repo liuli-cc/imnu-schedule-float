@@ -1,4 +1,4 @@
-教务悬浮助手 1.1.0
+教务悬浮助手 1.1.1
 
 1. 此 ZIP 已包含完整原生应用，不需要 Swift、Python 或 Homebrew。
 2. 先打开“教务悬浮助手.app”，也可移到 Applications 文件夹。

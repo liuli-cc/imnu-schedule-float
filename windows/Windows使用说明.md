@@ -1,4 +1,4 @@
-# 教务悬浮助手 Windows 1.1.0
+# 教务悬浮助手 Windows 1.1.1
 
 Intel / AMD 电脑选择 x64；ARM / Snapdragon 电脑选择 ARM64。安装版运行 Setup.exe，免安装版完整解压后运行 IMNUScheduleFloat.exe。免安装版必须保留 resources、DLL 等全部文件，不可只复制 EXE。
 
