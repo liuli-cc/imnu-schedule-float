@@ -273,6 +273,7 @@ function createBallWindow() {
     skipTaskbar: true,
     show: false,
     hasShadow: false,
+    thickFrame: false,
     backgroundColor: '#00000000'
   }, 'ball');
   ballWindow.setAlwaysOnTop(true, 'floating');

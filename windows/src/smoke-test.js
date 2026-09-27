@@ -15,9 +15,18 @@ async function until(check, label) {
 // No school requests, existing sessions or OS startup preferences are touched.
 exports.run = async ({app, ballWindow, panelWindow, ensurePortalWindow, smokeOutput, hideBallAtEdge, setFixture}) => {
   const report = {passed:false, version:app.getVersion(), arch:process.arch, checks:[]};
-  const capture = async (window, name) => fs.writeFileSync(path.join(smokeOutput, name + '.png'), (await window.webContents.capturePage()).toPNG());
+  const capture = async (window, name) => {
+    const frame = await Promise.race([
+      window.webContents.capturePage(),
+      pause(3000).then(() => { throw new Error('Screenshot timed out: ' + name); })
+    ]);
+    fs.writeFileSync(path.join(smokeOutput, name + '.png'), frame.toPNG());
+  };
   const inspect = (window, script) => window.webContents.executeJavaScript(script, true);
-  const record = label => report.checks.push(label);
+  const record = label => {
+    report.checks.push(label);
+    fs.writeFileSync(path.join(smokeOutput, 'smoke.json'), JSON.stringify(report, null, 2));
+  };
   try {
     const portal = ensurePortalWindow(false);
     const windows = [ballWindow, panelWindow, portal];
@@ -59,7 +68,8 @@ exports.run = async ({app, ballWindow, panelWindow, ensurePortalWindow, smokeOut
     await until(() => inspect(ballWindow, 'Boolean(document.querySelector(".edge-handle"))'), 'edge handle');
     await inspect(ballWindow, 'document.querySelector(".edge-handle").dispatchEvent(new MouseEvent("mouseenter"))');
     await pause(200);
-    assert.equal(ballWindow.getBounds().width, 12, 'Hover must keep the click target under the cursor');
+    assert.equal(await inspect(ballWindow, 'Boolean(document.querySelector(".edge-handle"))'), true, 'Hover must keep the click target under the cursor');
+    assert.equal(ballWindow.getBounds().width, 12, 'The native window must match the narrow edge handle');
     await inspect(ballWindow, 'document.querySelector(".edge-handle").click()');
     await until(() => panelWindow.isVisible(), 'single edge click opening');
     assert.equal(ballWindow.getBounds().width, 60);
@@ -71,7 +81,8 @@ exports.run = async ({app, ballWindow, panelWindow, ensurePortalWindow, smokeOut
     report.passed = true;
   } catch (error) {
     report.error = error.stack || String(error);
-    try { await capture(panelWindow, 'failure'); } catch {}
+    fs.writeFileSync(path.join(smokeOutput, 'smoke.json'), JSON.stringify(report, null, 2));
+    if (panelWindow.isVisible()) { try { await capture(panelWindow, 'failure'); } catch {} }
   } finally {
     fs.writeFileSync(path.join(smokeOutput, 'smoke.json'), JSON.stringify(report, null, 2));
     app.isQuitting = true;
