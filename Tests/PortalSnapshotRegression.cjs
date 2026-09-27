@@ -5,7 +5,7 @@ const vm = require('node:vm');
 
 // Run the actual embedded browser parser against isolated synthetic responses.
 // This never connects to the school or reads user data.
-const source = fs.readFileSync(path.join(__dirname, '../Sources/IMNUScheduleFloat/WebSession.swift'), 'utf8');
+const source = fs.readFileSync(path.join(__dirname, '../Sources/IMNUScheduleFloat/WebSession.swift'), 'utf8').replace(/\r\n/g, '\n');
 const nativeScript = source.match(/let script = #"""\n([\s\S]*?)\n        """#/)[1];
 const script = require('../windows/src/portal-snapshot');
 assert.equal(script.trim(), nativeScript.replace(/^ {8}/gm, '').trim(), 'Mac and Windows portal parsers must match');
