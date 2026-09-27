@@ -1,0 +1,95 @@
+Mac 电脑 + iPhone：安装、同步课表和更换背景
+适用版本：Mac 教务助手 1.1.1；iPhone 小组件 1.1.2
+
+准备：一台已安装教务助手的 Mac、一部 iPhone、Scriptable App 和同一个 Apple 账户。
+学校账号和验证码由使用者本人输入。不要把密码、验证码或个人课表发给他人。
+
+下载：
+Mac 教务助手：https://github.com/liuli-cc/imnu-schedule-float/releases/latest
+iPhone 小组件：https://github.com/liuli-cc/imnu-schedule-float/releases/tag/iphone-widget-v1.1.2
+Scriptable：https://apps.apple.com/app/scriptable/id1405459188
+
+一、在 Mac 同步最新课表
+1. 打开“教务悬浮助手”。
+2. 点击屏幕顶部菜单栏中的教务助手图标。
+3. 点击“立即同步”。也可以展开悬浮球，在面板底部点击“同步”。
+4. 等待同步完成，查看今天或本周课表，确认教学周和课程正确。
+5. 如果登录失效，点击“授权登录”，在学校教务网站由本人完成登录，然后再次同步。
+
+二、把课表文件放进 iCloud Drive
+1. 打开 Finder（访达）。
+2. 同时按 Command + Shift + G，打开“前往文件夹”。
+3. 粘贴下面的地址并按回车：
+~/Library/Application Support/IMNUScheduleFloat/
+4. 找到 schedule-cache.json，单击选中后按 Command + C。
+   不要打开或编辑文件。若找不到，先回教务助手完成一次同步。
+5. 再按 Command + Shift + G，粘贴下面的地址并按回车：
+~/Library/Mobile Documents/iCloud~dk~simonbs~Scriptable/Documents/IMNU-widget/
+6. 按 Command + V 粘贴文件。同名提示时选择“替换”。
+7. 如果 IMNU-widget 文件夹不存在，在 Scriptable 的 Documents 文件夹里按
+   Command + Shift + N 新建文件夹，并命名为 IMNU-widget。
+8. 等待 iCloud 同步完成。
+
+三、安装 iPhone 脚本（已经安装过可跳到第四节）
+1. 在 iPhone App Store 搜索 Scriptable，安装并打开一次。
+2. 在 Mac 打开上面的 iPhone 小组件下载页面，下载
+   IMNU-iPhone-Widget-1.1.2.zip，并在下载文件夹中双击解压。
+3. 将解压文件夹里的“内师大课表.scriptable”复制到 iCloud Drive 的
+   Scriptable 文件夹中。若 Scriptable 文件夹尚未出现，先在 iPhone 打开
+   Scriptable 并确认 iCloud Drive 已启用。
+4. 在 iPhone 打开“文件”→“浏览”→“iCloud Drive”→“Scriptable”，
+   点“内师大课表.scriptable”，再通过共享菜单选择 Scriptable。
+5. 在 Scriptable 中选择“Add to My Scripts”（添加到我的脚本）。
+
+四、首次导入课表或更新课表
+首次运行脚本时，按提示选择课表文件：
+“浏览”→“iCloud Drive”→“Scriptable”→“IMNU-widget”→schedule-cache.json。
+看到“课表已更新”后点“好”，应能查看今天、明天、本周等页面。
+
+以后更新课表：先在 Mac 完成第一节的同步和第二节的文件替换，再在 iPhone：
+1. 打开 Scriptable，运行已经添加的“内师大课表”脚本。
+2. 如果仍显示旧课表，打开完整课表并滑到页面底部。
+3. 点击“导入电脑更新的课表”。
+4. 选择“浏览”→“iCloud Drive”→“Scriptable”→“IMNU-widget”→
+   schedule-cache.json。
+5. 看到“课表已更新”后点“好”。
+
+五、把中号小组件放到主屏幕
+1. 回到 iPhone 主屏幕，长按空白位置直到图标开始抖动。
+2. 点“编辑”→“添加小组件”，搜索 Scriptable。
+3. 选择中号组件并点“添加小组件”。
+4. 长按新组件→“编辑小组件”。
+5. Script 选择刚才添加的“内师大课表”脚本；若有重名，选择最新的一份。
+6. When Interacting 选择 Run Script；Parameter 留空。
+7. 点空白处完成。点击组件可打开完整课表。
+
+六、更换中号组件背景
+图片建议用 PNG，横向约 2.15:1、1536×714 左右且小于 4 MB。人物放右侧，
+左侧留浅色低对比区域显示文字。方形头像直接使用可能会被裁切。
+
+1. 在 Finder 选中准备好的 PNG，按回车，将文件名改为 background.png。
+2. 按 Command + C 复制图片。
+3. 按 Command + Shift + G，打开下面的文件夹：
+~/Library/Mobile Documents/iCloud~dk~simonbs~Scriptable/Documents/IMNU-widget/
+4. 按 Command + V 粘贴。同名提示时选择“替换”，等待 iCloud 同步。
+5. 在 iPhone 打开 Scriptable 并运行课表脚本。
+6. 在完整课表底部点“预览小组件”→“中号 · 课表概览”，检查新背景。
+
+如果图片原来是 JPG，不要只修改扩展名。在 Mac“预览”打开图片，选“文件”→
+“导出”→格式选 PNG，再保存为 background.png。
+
+七、下课后会不会自动更新
+脚本会按当前时间重新计算课程，并在上下课时刻申请刷新；上下课前后 15 分钟内，
+申请间隔约为 5 分钟。但 iOS 可以推迟后台刷新，不能保证小组件在下课那一秒变化。
+需要马上确认时，点击组件打开完整课表；主屏幕组件的刷新时间由 iOS 安排。
+
+八、常见问题
+仍显示旧课表：确认 Mac 同步成功，在 iPhone 使用“导入电脑更新的课表”重新选择文件。
+仍显示旧背景：确认文件位于 iCloud Drive/Scriptable/IMNU-widget/background.png，
+再运行脚本并查看中号预览。
+没有头像：确认主屏幕添加的是中号组件；其他尺寸使用普通布局。
+手机找不到 Scriptable 文件夹：先打开 Scriptable，并在 iPhone 设置的 iCloud 页面
+确认已启用 iCloud Drive。
+课程变更、调课或换学期后需要重新同步课表；正常跨周不需要每周重新安装脚本。
+
+刷新机制：https://docs.scriptable.app/listwidget/#refreshafterdate

@@ -1,0 +1,99 @@
+Windows 电脑 + iPhone：安装、同步课表和更换背景
+适用版本：Windows 教务助手 1.1.1；iPhone 小组件 1.1.2
+
+准备：Windows 电脑、iPhone、本人学校账号、iCloud Drive 和 Scriptable App。
+登录学校和 Apple 账户时由使用者本人输入密码及验证码。不要把账号信息交给他人。
+
+下载：
+Windows 教务助手：https://github.com/liuli-cc/imnu-schedule-float/releases/latest
+iPhone 小组件：https://github.com/liuli-cc/imnu-schedule-float/releases/tag/iphone-widget-v1.1.2
+Scriptable：https://apps.apple.com/app/scriptable/id1405459188
+
+一、在 Windows 安装并同步课表
+1. 打开上面的 Windows 教务助手下载页面，向下找到“Assets”（资源）。
+2. 普通 Intel/AMD 电脑下载 Windows-x64 且以 Setup.exe 结尾的安装包。
+   骁龙/ARM 电脑下载 Windows-arm64 的 Setup.exe。
+3. 双击安装包，按界面提示安装并打开“教务悬浮助手”。
+4. 点击“授权登录”，在内蒙古师范大学教务网站由本人完成登录。
+5. 等待同步，确认课表和教学周正确。以后更新课表前先重新同步。
+
+二、找到电脑保存的课表
+1. 同时按 Win + R。
+2. 输入 %APPDATA%，点“确定”。
+3. 打开 imnu-schedule-float-win 文件夹；若没有，再查看“教务悬浮助手”。
+4. 找到 schedule-cache.json。不要打开或编辑它。
+5. 若找不到文件，回教务助手完成一次课表同步后再查找。
+
+三、下载并准备手机脚本
+1. 打开上面的 iPhone 小组件下载页面。
+2. 在 Assets 中下载 IMNU-iPhone-Widget-1.1.2.zip。
+3. 右键 ZIP→“全部解压”。
+4. 在解压目录中找到“内师大课表.scriptable”。
+
+四、用 iCloud Drive 把文件传给 iPhone
+Windows 没有系统自带的隔空投送。本教程用个人 iCloud Drive 传文件。
+
+电脑操作：
+1. 浏览器打开 https://www.icloud.com/iclouddrive/ 。
+2. 登录与 iPhone 相同的 Apple 账户（由本人登录）。
+3. 新建文件夹“课表安装”，并打开这个文件夹。
+4. 点工具栏的上传按钮，将“内师大课表.scriptable”上传。
+5. 再点上传，选择第二节找到的 schedule-cache.json。
+6. 等两个文件都上传完成。
+
+手机操作：
+1. 在 App Store 安装并打开 Scriptable。
+2. 打开“文件”→“浏览”→“iCloud Drive”→“课表安装”。
+3. 点“内师大课表.scriptable”，通过共享菜单选择 Scriptable。
+4. 在 Scriptable 中点“Add to My Scripts”（添加到我的脚本）。
+5. 运行刚添加的课表脚本。首次运行时，选择“浏览”→“iCloud Drive”→
+   “课表安装”→schedule-cache.json。
+6. 看到“课表已更新”后点“好”。
+
+如果共享菜单没有 Scriptable：把 ZIP 中的“内师大课表.js”也上传到“课表安装”。
+在 iPhone“文件”中长按 .js 文件→“移动”→iCloud Drive→Scriptable。再打开
+Scriptable，等待文件出现。确保文件名没有变成 .js.txt。
+
+五、把中号小组件放到 iPhone 主屏幕
+1. 回到主屏幕，长按空白处直到图标开始抖动。
+2. 点“编辑”→“添加小组件”，搜索 Scriptable。
+3. 左右滑动预览，选择中号，点“添加小组件”。
+4. 长按新组件→“编辑小组件”。
+5. Script 选择刚导入的课表脚本；重复导入时选择最新的一份。
+6. When Interacting 选择 Run Script；Parameter 留空。
+7. 点空白处完成。点击组件可以查看完整课表。
+
+六、更换中号小组件背景
+建议准备 PNG 横图：宽高约 2.15:1、1536×714 左右、文件小于 4 MB；人物放右侧，
+左侧留浅色低对比区域。方形头像直接用可能会被裁切。
+
+1. 将图片命名为 background.png。资源管理器里可选“查看”→“显示”→“文件扩展名”，
+   避免文件名变为 background.png.png。
+2. 若原图是 JPG，用“画图”打开→“文件”→“另存为”→“PNG 图片”。
+   只改扩展名不能转换图片格式。
+3. 在 iCloud Drive 网页的“课表安装”文件夹上传 background.png。
+4. 在 iPhone“文件”→“浏览”→“iCloud Drive”→“Scriptable”。
+5. 点右上角“…”→“新建文件夹”，命名为 IMNU-widget。若该文件夹已存在，直接使用。
+6. 返回“课表安装”，长按 background.png→“复制”。
+7. 进入 iCloud Drive→Scriptable→IMNU-widget，长按空白处→“粘贴”。
+   替换同名文件时选择“替换”。
+8. 打开 Scriptable，运行课表脚本；在完整课表底部点“预览小组件”→“中号 · 课表概览”。
+
+七、以后更新课表
+电脑：先在 Windows 教务助手同步，再用 Win + R 打开 %APPDATA%，找到
+schedule-cache.json，并将新文件上传到 iCloud Drive→课表安装，替换旧文件。
+
+手机：点击主屏幕课表打开完整课表，滑到底部点击“导入电脑更新的课表”，选择
+“浏览”→“iCloud Drive”→“课表安装”→schedule-cache.json。看到“课表已更新”后点“好”。
+正常跨周不用每天上传；调课或换学期后再同步即可。
+
+八、关于自动刷新
+脚本会按当前时间重新计算课程，并在上下课时刻申请刷新；上下课前后 15 分钟内，
+申请间隔约为 5 分钟。iOS 可能推迟后台刷新，不能保证下课那一秒主屏幕立即变化。
+点击组件可以立即打开完整课表；小组件何时刷新由 iOS 安排。
+
+常见问题：旧课表请在手机上手动导入新 JSON；旧背景请确认文件在
+iCloud Drive/Scriptable/IMNU-widget/background.png。课表文件含个人课程，
+只上传到自己的 iCloud Drive，不要公开上传到 GitHub。
+
+刷新机制：https://docs.scriptable.app/listwidget/#refreshafterdate

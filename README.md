@@ -21,6 +21,8 @@
 
 [iPhone 小组件下载与说明](https://github.com/liuli-cc/imnu-schedule-float/releases/tag/iphone-widget-v1.1.2) · [手机源码与数据导出](Mobile/README.md)。通过免费的 Scriptable App 导入，支持主屏幕小、中、大号和锁屏入口；点击直接查看课表与成绩。该版本为小组件脚本，需导入自己的桌面课表，不是独立签名 IPA。公开包不含私人数据。
 
+[Mac + iPhone、Windows + iPhone 傻瓜教程](傻瓜教程/README.md)：单独查看逐步安装、课表同步和更换背景步骤。
+
 系统要求：macOS 14 及以上；Windows 10 / 11。Mac 可在“关于本机”查看芯片；Windows 在“设置 → 系统 → 系统信息”查看系统类型。Windows ARM64 包已检查架构，尚未经过 ARM 实机交互验收。
 
 ## 安装与使用
