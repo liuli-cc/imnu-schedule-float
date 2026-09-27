@@ -28,6 +28,25 @@ check('只选择当天有效课程',()=>assert.deepEqual(Core.coursesOn(demo,'20
 check('当前课程持续显示至下课',()=>assert.equal(Core.nextCourse(demo,now).course.id,'a'));
 check('下课时刻选择下一节',()=>assert.equal(Core.nextCourse(demo,new Date('2026-09-28T10:00:00+08:00')).course.id,'b'));
 check('第二天课程按该日教学周筛选',()=>assert.equal(Core.nextCourse(demo,new Date('2026-09-28T12:01:00+08:00')).course.id,'c'));
+check('下节课程包含课程、教室、开始时间并支持跨日',()=>{
+  const first=Core.nextCourse(demo,now),second=Core.followingCourse(demo,first);
+  assert.equal(second.course.id,'b');assert.equal(second.course.location,'示例理学楼 204');assert.equal(Core.times(second.course).start,'10:20');
+  assert.equal(Core.followingCourse(demo,second).key,'2026-09-29');
+  assert.equal(Core.followingCourse({...demo,courses:[]},first),null);
+});
+check('上下课转换准确，边界附近更快申请刷新',()=>{
+  assert.equal(Core.nextCourse(demo,new Date('2026-09-28T09:59:59+08:00')).course.id,'a');
+  assert.equal(Core.nextCourse(demo,new Date('2026-09-28T10:00:00+08:00')).course.id,'b');
+  assert.equal(Core.nextRefresh(demo,new Date('2026-09-28T09:59:59+08:00')).toISOString(),'2026-09-28T02:00:01.000Z');
+  assert.equal(Core.nextRefresh(demo,new Date('2026-09-28T10:00:05+08:00')).toISOString(),'2026-09-28T02:05:06.000Z');
+});
+check('直接导入 Mac 和 Windows 缓存，过滤身份字段',()=>{
+  for(const swift of [true,false]) {
+    const stamp='2026-09-27T06:00:00Z';
+    const raw={...demo,schemaVersion:undefined,currentWeek:3,currentWeekAnchorDate:swift?(Date.parse(stamp)-Date.UTC(2001,0,1))/1000:stamp,updatedAt:stamp,profile:{name:'SECRET_NAME',studentNumber:'SECRET_ID',gpa:'3.8'},cookies:'SECRET_COOKIE'};
+    const valid=Core.validate(raw);assert.equal(Core.weekAt(valid,'2026-09-28'),4);assert.equal(valid.gpa,'3.8');assert.ok(!JSON.stringify(valid).includes('SECRET_'));
+  }
+});
 check('没有课与未知周次区分',()=>{assert.deepEqual(Core.coursesOn({...demo,currentWeek:null},'2026-09-28'),[]);assert.equal(Core.nextCourse({...demo,currentWeek:null},now),null);});
 check('上课、下课与午夜申请刷新',()=>{assert.equal(Core.nextRefresh(demo,now).toISOString(),'2026-09-28T01:30:01.000Z');assert.equal(Core.nextRefresh(demo,new Date('2026-09-28T23:55:00+08:00')).toISOString(),'2026-09-28T16:00:01.000Z');});
 check('零分保留，非法日期锚点清除',()=>{assert.equal(Core.validate(demo).grades[0].score,'0');assert.equal(Core.validate({...demo,weekAnchorDate:'2026-02-31'}).currentWeek,null);});
@@ -123,13 +142,21 @@ async function main(){
     const themedOutput=path.join(temporary,'themed');
     const themed=spawnSync('python3',[path.join(__dirname,'export-mobile.py'),'--cache',cachePath,'--background',imagePath,'--output',themedOutput],{encoding:'utf8'});assert.equal(themed.status,0,themed.stderr);
     const themedScript=JSON.parse(fs.readFileSync(path.join(themedOutput,'内师大课表.scriptable'),'utf8')).script;
-    const themedSandbox={...sandbox};await vm.runInNewContext('(async()=>{'+themedScript.replace('await main();','globalThis.build=buildWidget;')+'})()',themedSandbox);
+    const themedSandbox={...sandbox};await vm.runInNewContext('(async()=>{'+themedScript.replace('await main();','globalThis.build=buildWidget;globalThis.loadArt=loadBackground;')+'})()',themedSandbox);
     for (const width of [320,375,393,430]) {
       themedSandbox.Device={screenSize:()=>({width,height:932})};
-      const w=themedSandbox.build(demo,'medium',now);assert.deepEqual(w.backgroundImage.bytes,imageBytes);assert.ok(allText(w).includes('08:20'));assert.ok(allText(w).includes('示例'));
+      const w=themedSandbox.build(demo,'medium',now);assert.deepEqual(w.backgroundImage.bytes,imageBytes);assert.ok(allText(w).includes('08:20'));assert.ok(allText(w).includes('示例'));assert.ok(allText(w).includes('下节 10:20'));assert.ok(allText(w).includes('示例理学楼 204'));assert.ok(!allText(w).includes('点此查看'));assert.ok(!allText(w).includes('至 10:00'));
     }
     assert.equal(themedSandbox.build(demo,'accessoryInline',now).backgroundImage,undefined);
     checks++;console.log('PASS 横幅嵌入、四种手机宽度与锁屏隔离');
+    const replacementImage={image:'replacement-art'};
+    themedSandbox.FileManager.iCloud=()=>({...manager,fileExists:()=>true,readImage:()=>replacementImage});
+    // 'local' is captured at script load; augment that same instance for offline image caching.
+    manager.writeImage=(p,img)=>files.set(p,img);manager.readImage=p=>files.get(p);
+    await themedSandbox.loadArt();assert.equal(themedSandbox.build(demo,'medium',now).backgroundImage,replacementImage);
+    themedSandbox.FileManager.iCloud=()=>({...manager,fileExists:()=>false});
+    await themedSandbox.loadArt();assert.equal(themedSandbox.build(demo,'medium',now).backgroundImage,replacementImage);
+    files.delete('/documents/IMNU-widget/background.png');checks++;console.log('PASS iCloud 换图与离线图片回退');
     fs.writeFileSync(imagePath,'not an image');
     const rejected=spawnSync('python3',[path.join(__dirname,'export-mobile.py'),'--generic','--background',imagePath,'--output',path.join(temporary,'invalid')],{encoding:'utf8'});assert.notEqual(rejected.status,0);assert.ok(!fs.existsSync(path.join(temporary,'invalid')));checks++;console.log('PASS 无效背景不会留下半成品');
     const publicOutput=path.join(temporary,'public');const generic=spawnSync('python3',[path.join(__dirname,'export-mobile.py'),'--generic','--output',publicOutput],{encoding:'utf8'});assert.equal(generic.status,0,generic.stderr);assert.ok(!fs.existsSync(path.join(publicOutput,'内师大课表.json')));checks++;console.log('PASS 公开包无个人课表');

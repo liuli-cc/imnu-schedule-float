@@ -4,7 +4,13 @@
 
 安装步骤见 [安装说明](安装说明.txt)。需要先从 App Store 安装免费 Scriptable。这是可导入的小组件脚本，不是独立签名的 iPhone App；AirDrop 负责传文件，不能使未签名 IPA 获得安装许可。小组件不跨应用悬浮，iOS 控制其刷新频率。
 
-## 从自己的桌面数据生成专用包
+## 日常同步与换背景（无需打包）
+
+[Windows + iPhone 逐步文本教程](guides/给别人用_Windows和iPhone_操作教程.txt)。手机支持直接导入 Mac/Windows 的 `schedule-cache.json`。也可把该文件复制到自己的 `iCloud Drive/Scriptable/IMNU-widget/`，下次运行会读取最新数据。将 PNG 横幅保存为此目录下的 `background.png`，再运行脚本即可更换中号背景。
+
+中号底部显示主课程之后的下一节课：开始时间、课程名和教室。上下课边界申请刷新，前后 15 分钟内以约 5 分钟为申请间隔；实际执行由 iOS 决定，不保证准点或实时。
+
+## 开发者：从桌面数据生成专用包
 
 Mac 缓存中的 Date 使用 Swift 的 2001 年参考纪元；导出器转成 ISO 日期并保留官网教学周锚点。Windows ISO 字符串同样支持。只复制明确允许的课程与成绩字段，不导出学生姓名、学号、Cookies 或登录凭据。
 
@@ -22,7 +28,7 @@ python3 Mobile/export-mobile.py \
 
 ```sh
 node Mobile/tests.cjs
-python3 Mobile/export-mobile.py --generic --output release-out/IMNU-iPhone-Widget-1.1.0
+python3 Mobile/export-mobile.py --generic --output release-out/IMNU-iPhone-Widget-1.1.1
 ```
 
 `core.js` 处理 Asia/Shanghai 日期、官网周锚、单双周、课程时间、状态和刷新边界。`widget.js` 仅调用 Scriptable 官方 API，`panel.html` 为离线完整课表。`export-mobile.py` 将其拼成单文件，并生成备用 JS、说明和 SHA256。专用包只能放在忽略的输出目录或仓库外，禁止提交私人课表。

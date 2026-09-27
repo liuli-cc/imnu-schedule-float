@@ -10,7 +10,9 @@ const Core = IMNUScheduleCore;
 const local = FileManager.local();
 const store = local.joinPath(local.documentsDirectory(), 'IMNU-widget');
 const dataPath = local.joinPath(store, 'schedule.json');
+const backgroundPath = local.joinPath(store, 'background.png');
 let data = null;
+let customBackground = null;
 
 function saveData(raw) {
   const valid = Core.validate(raw);
@@ -20,7 +22,7 @@ function saveData(raw) {
 }
 function readData(fm, path) {
   if (!fm.fileExists(path)) return null;
-  return Core.validate(JSON.parse(fm.readString(path)));
+  return Core.validate(JSON.parse(fm.readString(path).replace(/^\uFEFF/, '')));
 }
 function revision(raw) { return Date.parse(raw.exportedAt || raw.updatedAt) || 0; }
 async function loadData() {
@@ -30,15 +32,34 @@ async function loadData() {
   // Optional private iCloud transport; never request a public endpoint.
   try {
     const cloud = FileManager.iCloud();
-    const path = cloud.joinPath(cloud.documentsDirectory(), 'IMNU-widget/schedule.json');
-    if (cloud.fileExists(path)) {
-      if (!cloud.isFileDownloaded(path)) await cloud.downloadFileFromiCloud(path);
-      const synced = readData(cloud, path); if (synced) candidates.push(synced);
+    for (const filename of ['schedule.json', 'schedule-cache.json']) {
+      try {
+        const path = cloud.joinPath(cloud.documentsDirectory(), 'IMNU-widget/' + filename);
+        if (cloud.fileExists(path)) {
+          if (!cloud.isFileDownloaded(path)) await cloud.downloadFileFromiCloud(path);
+          const synced = readData(cloud, path); if (synced) candidates.push(synced);
+        }
+      } catch (_) {}
     }
   } catch (_) {}
   candidates.sort((a, b) => revision(b) - revision(a));
   if (!candidates.length) return null;
   return saveData(candidates[0]);
+}
+async function loadBackground() {
+  try {
+    const cloud = FileManager.iCloud();
+    const path = cloud.joinPath(cloud.documentsDirectory(), 'IMNU-widget/background.png');
+    if (cloud.fileExists(path)) {
+      if (!cloud.isFileDownloaded(path)) await cloud.downloadFileFromiCloud(path);
+      const image = cloud.readImage(path);
+      if (image) {
+        if (!local.fileExists(store)) local.createDirectory(store, true);
+        local.writeImage(backgroundPath, image); customBackground = image; return;
+      }
+    }
+  } catch (_) {}
+  try { if (local.fileExists(backgroundPath)) customBackground = local.readImage(backgroundPath); } catch (_) {}
 }
 function color(light, dark) { return Color.dynamic(new Color(light), new Color(dark)); }
 function ink() { return color('#252a30', '#f5f2ec'); }
@@ -49,6 +70,14 @@ function text(stack, value, size, weight, tint, lines = 1) {
   item.font = weight === 'bold' ? Font.boldSystemFont(size) : weight === 'medium' ? Font.mediumSystemFont(size) : Font.systemFont(size);
   item.textColor = tint || ink(); item.lineLimit = lines; item.minimumScaleFactor = 0.8;
   return item;
+}
+function nextLessonText(raw, primary, today) {
+  const following = raw && primary ? Core.followingCourse(raw, primary) : null;
+  if (!following) return [raw && primary ? '暂无后续课程' : '课表待更新', ''];
+  const time = Core.times(following.course);
+  const day = following.key === primary.key ? '' : Core.labelFor(following.key, today) + ' ';
+  return ['下节 ' + day + (time ? time.start : '时间待确认') + ' · ' + following.course.name,
+    following.course.location || '教室待公布'];
 }
 function buildWidget(raw, family, now = new Date(), parameter = '') {
   const widget = new ListWidget();
@@ -70,8 +99,8 @@ function buildWidget(raw, family, now = new Date(), parameter = '') {
   const time = primary ? Core.times(primary.course) : null;
   const title = !raw ? '导入课表' : week === null ? '教学周待确认' : !primary ? '暂无课程' : primary.course.name;
   const hint = !raw ? '点击设置' : week === null ? '点击更新课表' : !primary ? '打开完整课表' : time ? time.start + '–' + time.end : '时间待确认';
-  let illustration = null;
-  if (family === 'medium' && BACKGROUND) {
+  let illustration = family === 'medium' ? customBackground : null;
+  if (family === 'medium' && !illustration && BACKGROUND) {
     try { illustration = Image.fromData(Data.fromBase64String(BACKGROUND)); } catch (_) {}
   }
   if (illustration) {
@@ -96,8 +125,9 @@ function buildWidget(raw, family, now = new Date(), parameter = '') {
     column.addSpacer(4);
     text(column, primary ? primary.course.location || '教室待公布' : hint, 11, 'medium', secondary);
     column.addSpacer(8);
-    const age = raw ? Core.staleDays(raw, now) : null;
-    text(column, !raw || week === null ? '点此更新课表' : age !== null && age >= 7 ? age + ' 天未更新 · 点此查看' : time ? '至 ' + time.end + '  ·  点此查看' : '点此查看完整课表', 10, 'regular', secondary);
+    const following = nextLessonText(raw, primary, today);
+    text(column, following[0], 10, 'regular', secondary);
+    if (following[1]) { column.addSpacer(2); text(column, following[1], 10, 'regular', secondary, 2); }
     widget.addSpacer();
   } else if (family === 'accessoryInline') {
     text(widget, primary ? (time ? time.start + ' ' : '') + title + ' · ' + (primary.course.location || '教室待公布') : title, 12, 'medium', Color.white());
@@ -129,7 +159,7 @@ function buildWidget(raw, family, now = new Date(), parameter = '') {
       row.addSpacer(12);
       const clock = row.addStack(); clock.layoutVertically();
       const start = text(clock, time ? time.start : '—', 24, 'bold', accent()); start.rightAlignText();
-      const end = text(clock, time ? '至 ' + time.end : '教务助手', 11, 'regular', muted()); end.rightAlignText();
+      if (family !== 'medium') { const end = text(clock, time ? '至 ' + time.end : '教务助手', 11, 'regular', muted()); end.rightAlignText(); }
       if (family === 'large') {
         widget.addSpacer(19);
         text(widget, target === today ? '今天的课程' : '明天的课程', 12, 'medium', muted()); widget.addSpacer(8);
@@ -139,7 +169,10 @@ function buildWidget(raw, family, now = new Date(), parameter = '') {
       }
       widget.addSpacer();
       const age = raw ? Core.staleDays(raw,now) : null;
-      text(widget, !raw || week === null ? '点此导入或更新课表' : age !== null && age >= 7 ? age + ' 天未更新 · 点此查看' : (target===today?'今天 ':'明天 ') + todayRows.length + ' 节课 · 点此查看完整课表', 11, 'regular', muted());
+      if (family === 'medium') {
+        const following = nextLessonText(raw, primary, today);
+        text(widget, following.filter(Boolean).join('\n'), 10, 'regular', muted(), 3);
+      } else text(widget, !raw || week === null ? '点此导入或更新课表' : age !== null && age >= 7 ? age + ' 天未更新 · 点此查看' : (target===today?'今天 ':'明天 ') + todayRows.length + ' 节课 · 点此查看完整课表', 11, 'regular', muted());
     }
   }
   widget.refreshAfterDate = raw ? Core.nextRefresh(raw, now) : new Date(now.getTime()+30*60000);
@@ -150,7 +183,8 @@ async function importData() {
   try {
     const path = await DocumentPicker.openFile();
     if (!path) return false;
-    data = saveData(JSON.parse(local.readString(path)));
+    const imported = Core.validate(JSON.parse(local.readString(path).replace(/^\uFEFF/, '')));
+    data = saveData({...imported, exportedAt: new Date().toISOString()});
     await alertMessage('课表已更新', '主屏幕和锁屏小组件将在 iOS 安排刷新时显示新课表。');
     return true;
   } catch (_) { await alertMessage('没有更新课表', '请重新选择电脑导出的“内师大课表.json”。原有课表仍然保留。'); return false; }
@@ -179,8 +213,9 @@ async function phoneView() {
 }
 async function main() {
   data = await loadData();
+  await loadBackground();
   if(config.runsInWidget){Script.setWidget(buildWidget(data,config.widgetFamily||'medium',new Date(),args.widgetParameter||''));Script.complete();return;}
-  if(args.fileURLs && args.fileURLs.length){try{data=saveData(JSON.parse(local.readString(args.fileURLs[0])));}catch(_){await alertMessage('导入失败','请选择教务助手导出的课表 JSON。');}}
+  if(args.fileURLs && args.fileURLs.length){try{const imported=Core.validate(JSON.parse(local.readString(args.fileURLs[0]).replace(/^\uFEFF/,'')));data=saveData({...imported,exportedAt:new Date().toISOString()});}catch(_){await alertMessage('导入失败','请选择教务助手保存的课表 JSON。');}}
   await phoneView(); Script.complete();
 }
 await main();

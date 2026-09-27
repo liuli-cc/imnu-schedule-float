@@ -63,6 +63,21 @@ const IMNUScheduleCore = (() => {
     return null;
   }
   function validate(raw) {
+    // Accept the existing Mac/Windows cache directly, then pass it through the
+    // same allow-list as the mobile format. No desktop identity fields survive.
+    if (raw && raw.schemaVersion === undefined && Array.isArray(raw.courses)) {
+      const iso = value => {
+        const stamp = typeof value === 'number' ? Date.UTC(2001, 0, 1) + value * 1000 : typeof value === 'string' ? Date.parse(value) : NaN;
+        return Number.isFinite(stamp) ? new Date(stamp).toISOString() : '';
+      };
+      const anchor = iso(raw.currentWeekAnchorDate || raw.updatedAt);
+      const updatedAt = iso(raw.updatedAt);
+      raw = { schemaVersion: 1, courses: raw.courses, grades: raw.grades,
+        term: raw.term, maxWeek: raw.maxWeek, currentWeek: raw.weekAnchor ?? raw.currentWeek,
+        weekAnchorDate: anchor ? dayKey(new Date(anchor)) : null,
+        updatedAt, exportedAt: updatedAt, gradesUpdatedAt: iso(raw.gradesUpdatedAt),
+        gpa: String((raw.profile || {}).gpa ?? '') };
+    }
     if (!raw || raw.schemaVersion !== 1 || !Array.isArray(raw.courses) || raw.courses.length > 1000)
       throw new Error('请选择教务助手导出的课表 JSON 文件');
     const text = (v, max = 300) => typeof v === 'string' ? v.slice(0, max) : '';
@@ -99,10 +114,18 @@ const IMNUScheduleCore = (() => {
     const key = dayKey(now), midnight = new Date(addDays(key, 1) + 'T00:00:00+08:00');
     const boundaries = coursesOn(data, key).flatMap(c => {
       const r = interval(c, key); return r ? [r.start, r.end] : [];
-    }).filter(d => d > now);
-    return new Date(Math.min(now.getTime() + 30 * 60000, midnight.getTime(), ...boundaries.map(d => d.getTime())) + 1000);
+    });
+    // iOS may defer any request. Around transitions, ask again sooner rather
+    // than leaving the next request thirty minutes away after a late run.
+    const nearTransition = boundaries.some(d => Math.abs(d - now) <= 15 * 60000);
+    const retry = (nearTransition ? 5 : 30) * 60000;
+    return new Date(Math.min(now.getTime() + retry, midnight.getTime(), ...boundaries.filter(d => d > now).map(d => d.getTime())) + 1000);
+  }
+  function followingCourse(data, primary) {
+    const range = primary && interval(primary.course, primary.key);
+    return range ? nextCourse(data, range.end) : null;
   }
   return { weekdays, blocks, dayKey, weekday, monday, addDays, weekAt, parseWeeks, times, occurs,
-    coursesOn, interval, nextCourse, validate, labelFor, staleDays, nextRefresh };
+    coursesOn, interval, nextCourse, followingCourse, validate, labelFor, staleDays, nextRefresh };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = IMNUScheduleCore;

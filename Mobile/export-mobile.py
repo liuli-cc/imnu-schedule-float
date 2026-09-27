@@ -11,7 +11,7 @@ import shutil
 import zipfile
 
 ROOT = Path(__file__).resolve().parent
-VERSION = '1.1.0'
+VERSION = '1.1.1'
 NAME = '内师大课表'
 UTC = dt.timezone.utc
 SHANGHAI = dt.timezone(dt.timedelta(hours=8))
@@ -79,7 +79,7 @@ def image_payload(path):
 
 def build(output, data, refresh=False, background=None):
     artwork = image_payload(background)
-    expected = {NAME + '.js', NAME + '.scriptable', NAME + '.json', '手机离线课表.html', '安装说明.txt', 'SHA256SUMS.txt'}
+    expected = {NAME + '.js', NAME + '.scriptable', NAME + '.json', '手机离线课表.html', '安装说明.txt', 'Windows和iPhone傻瓜教程.txt', 'SHA256SUMS.txt'}
     if data and (ROOT.parent / '.git').exists() and output.is_relative_to(ROOT.parent) and not any(output.is_relative_to(folder) for folder in
         [ROOT.parent / 'release-out', ROOT / 'out', ROOT / 'private', ROOT.parent / '.build']):
         raise ValueError('专用包含个人课表，请导出到仓库外或忽略的 release-out / Mobile/private 目录')
@@ -104,6 +104,8 @@ def build(output, data, refresh=False, background=None):
         (output / (NAME + '.json')).write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
         (output / '手机离线课表.html').write_text(panel.replace('/* __MOBILE_DATA__ */', script_json(data)).replace('/* __MOBILE_HOST__ */', 'false'), encoding='utf-8')
     shutil.copyfile(ROOT / '安装说明.txt', output / '安装说明.txt')
+    guide = ROOT / 'guides' / '给别人用_Windows和iPhone_操作教程.txt'
+    if guide.exists(): shutil.copyfile(guide, output / 'Windows和iPhone傻瓜教程.txt')
     checksums = []
     for path in sorted(output.iterdir()):
         if path.is_file() and path.name != 'SHA256SUMS.txt':
